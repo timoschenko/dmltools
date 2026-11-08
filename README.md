@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/timoschenko/dmltools/actions/workflows/pre-commit.yml/badge.svg)](https://github.com/timoschenko/dmltools/actions/workflows/pre-commit.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/timoschenko/dmltools.svg)](https://pkg.go.dev/github.com/timoschenko/dmltools)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/timoschenko/dmltools?logo=go)](go.mod)
 [![Release](https://img.shields.io/github/v/release/timoschenko/dmltools)](https://github.com/timoschenko/dmltools/releases)
 [![License: GPL-2.0](https://img.shields.io/badge/License-GPL_2.0-blue.svg)](LICENSE)
 
