@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch file",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${file}"
+        },
+        {
+            "name": "Debug ANTLR4 grammar",
+            "type": "antlr-debug",
+            "request": "launch",
+            "grammar": "dmlex/dml.g4",
+            "input": "dmlex/examples/methods.dml",
+            "printParseTree": true,
+            "visualParseTree": true
+        }
+    ]
+}

@@ -1,0 +1,904 @@
+dml 1.4;
+
+provisional explicit_param_decls, another_provisional_feature;
+
+device DEVICE_NAME;
+
+bitorder le; // identifiers le or be, implying little-endian or big-endian
+
+
+import "simics/devs/ethernet.dml";
+
+/*% tag abc %*/
+/*% COVERITY event classification %*/
+/*% COVERITY event %*/
+loggroup Loggroup123;
+
+extern typedef struct {
+    struct {
+        int x;
+    } inner;
+} outer_t;
+
+extern typedef union {
+    int x;
+    double d;
+} union_t;
+
+typedef union named_union {
+    uint32 raw;
+    struct {
+        uint16 lo;
+        uint16 hi;
+    } parts;
+} my_union_t;
+
+
+header %{
+#include "extra_defs.h"
+%}
+
+
+footer %{
+void _c_footer() {
+    printf("hello world");
+}
+%}
+
+
+extern char *motd;
+extern double table[16];
+extern conf_object_t *obj;
+extern int foo(int x);
+extern int printf(const char *format, ...);
+
+
+method my_method(int x) {
+}
+
+
+export my_method as "my_c_function";
+
+constant CONSTANT_NUM = 1234;
+constant CONSTANT_EXPESSION = (1 != CONSTANT_NUM);
+
+constant unmapped_offset = 0xffff_ffff_ffff_ffff;
+constant unmapped_offset = 0b1111_0000_1111;
+
+
+bank BANK {
+    param register_size = 4;
+
+    implement IMPLEMENT_BANK {
+    }
+
+    connect CONNECT_BANK {
+        interface INTERFACE_BANK {
+        }
+    }
+
+    attribute ATTRIBUTE_BANK {
+    }
+
+    register R {
+        field F {
+        }
+    }
+
+    register r1_s4 {
+        param size = 4;
+    }
+
+    register r1_s4_inline size 4 {
+    }
+
+    register r1_addr_inline @ 0x0100;
+    register r1_addr_size size 4 @ 0x0100;
+    register r is (unmapped);
+
+    register rf {
+        field status @ [2:0];
+        field flags @ [8:3];
+        field reserved @ [15:9];
+    }
+
+    group blocks[i < 8] {
+        register r1 @ i * 32 + 0;
+        register r2 @ i * 32 + 4;
+        register r3[j < 6] @ i * 32 + 8 + j * 4;
+    }
+}
+
+
+template weird {
+    param group_offset;
+
+    register a size 4 @ group_offset is (read, write);
+
+    register b size 4 @ group_offset + 4 is (read, write) {
+        method read() -> (uint64) {
+            // When register b is read, return a
+            return a.val;
+        }
+    }
+}
+
+
+bank regs {
+    group block_a is (weird) {
+        param group_offset = 128;
+    }
+
+    group block_b is (weird) {
+        param group_offset = 1024;
+    }
+}
+
+
+bank regs {
+    param register_size = 4;
+
+    group blocks[i < 8] {
+        register r1 @ i * 52 + 0;
+
+        group sub_blocks[j < 4] {
+            register r2 @ i * 52 + j * 12 + 4;
+            register r3[k < 3] @ i * 52 + j * 12 + k * 4 + 8;
+        }
+    }
+
+    in each field {
+        is write;
+    }
+
+    in each register {
+        param size = 2;
+    }
+
+    register r0 size 2 @ 0x0000 is (constant) {
+        param value = 0xffff;
+    }
+
+    register r2 @ 0x0100 "general-purpose register 0" {
+    }
+
+    register r2 @ 0x0100 is (read, write) "general-purpose register 0";
+
+    register r4 @ 0x0100 is (read, write) "general-purpose register 0" {
+    }
+
+    #if (modeltype == "Mark I") {
+        register R size 4;
+    } #else #if (modeltype == "Mark II") {
+        register R size 2;
+    } #else {
+        register R size 1;
+    }
+}
+
+
+#if (enable_target) {
+    connect target {
+        interface signal;
+    }
+} #else {
+    connect fallback_target {
+        interface signal;
+    }
+}
+
+
+port PORT {
+    implement IMPLEMENT_PORT {
+    }
+
+    connect CONNECT_PORT {
+        interface INTERFACE_PORT {
+            param configuration = "optional";
+        }
+    }
+
+    attribute ATTRIBUTE_PORT {
+    }
+}
+
+
+subdevice SUBDEVICE {
+    implement IMPLEMENT_SUBDEVICE {
+    }
+
+    connect CONNECT_SUBDEVICE {
+        interface INTERFACE_SUBDEVICE {
+        }
+    }
+
+    attribute ATTRIBUTE_SUBDEVICE {
+    }
+}
+
+
+implement IMPLEMENT_DEVICE {
+    attribute ATTRIBUTE_IMPLEMENT {
+    }
+}
+
+
+connect CONNECT_DEVICE {
+    interface INTERFACE_DEVICE {
+    }
+
+    interface serial_device;
+
+    interface rs232_device {
+        param required = false;
+    }
+
+    method call_write(int value) {
+        local int n = this.serial_device.write(value);
+    }
+}
+
+
+interface INTERFACE_TOPLEVEL {
+}
+
+
+attribute ATTRIBUTE_DEVICE {
+}
+
+
+event EVENT {
+}
+
+
+group GROUP {
+    // a group cannot contain an object of type interface or implement
+}
+
+
+// Template for finite state machines
+template fsm is init {
+    saved fsm_state curr_state;
+
+    // The initial FSM state.
+    // Must be defined by any object instantiating this template.
+    param init_fsm_state: fsm_state;
+
+    shared method init() default {
+        curr_state = init_fsm_state;
+    }
+
+    // Execute the action associated to the current state
+    shared method action() {
+        curr_state.action();
+    }
+}
+
+
+// Template for states of an FSM. Such states must be sub-objects
+// of an FSM.
+template fsm_state {
+    param parent_fsm: fsm;
+    param parent_fsm = cast(parent, fsm);
+
+    // The action associated to this state
+    shared method action();
+
+    // Transitions the parent FSM to this state
+    shared method set() {
+        parent_fsm.curr_state = cast(this, fsm_state);
+    }
+}
+
+
+group main_fsm is fsm {
+    param init_fsm_state = cast(init_state, fsm_state);
+
+    group init_state is fsm_state {
+        method action() {
+            log info: "init_state -> second_state";
+            // Transition to second_state
+            second_state.set();
+        }
+    }
+
+    group second_state is fsm_state {
+        method action() {
+            log info: "second_state -> final_state";
+            // Transition to final_state
+            final_state.set();
+        }
+    }
+
+    group final_state is fsm_state {
+        method action() {
+            log info: "in final_state";
+        }
+    }
+}
+
+
+method trigger_fsm() {
+    // Execute the action of main_fsm's current state.
+    main_fsm.action();
+}
+
+
+template A {
+    method hello() default {
+        log info: "hello";
+    }
+}
+
+
+template B is A {
+    // this method overrides the
+    // method from A
+    method hello() default {
+        default();
+        log info: "world";
+
+        #if (this.objtype == "event") {
+            error "event objects may not instantiate the 'destroy' template";
+        }
+    }
+}
+
+
+template base {
+    // abstract method: must be instantiated in sub-template or object
+    shared method m(int i) -> (int);
+
+    shared method n() -> (int) default {
+        return 5;
+    }
+}
+
+
+template sub is base {
+    // override
+    shared method m(int i) -> (int) default {
+        return i + this.n();
+    }
+}
+
+
+template get_qname {
+    shared method get_qname() -> (const char *);
+
+    method get_qname() -> (const char *) {
+        // qname is an untyped parameter, and would thus not be accessible
+        // within a shared implementation of get_qname()
+        return this.qname;
+    }
+}
+
+
+template max_val_reg is write {
+    param max_val: uint64;
+
+    shared method write(uint64 v) {
+        if (v > max_val) {
+            log info: "Ignoring write to register exceeding max value %u",
+                max_val;
+        } else {
+            default(v);
+        }
+    }
+}
+
+
+template seq_test {
+    param _each_seq_test: sequence(seq_test);
+    param _each_seq_test = each seq_test in (this);
+
+    shared method _rec_seq_test() {
+        foreach obj in (this._each_seq_test) {
+            obj._rec_seq_test();
+        }
+        this.seq_test();
+    }
+
+    shared method seq_test();
+
+    #if (this.objtype == "test1234") {
+        error "error from seq_test";
+    }
+}
+
+
+extern typedef struct {
+    conf_object_t obj;
+    conf_object_t *dev;
+    int ndims;
+    const uint32 *indices;
+} _123port_object_t;
+
+
+extern typedef struct {
+    void (*test)(conf_object_t *dev);
+    set_error_t * (*free)(
+        conf_object_t *dev, /*mutable*/ custrom_struct_t *dat, const another_t *const bat
+    );
+    int (*size)(
+        /* const */ conf_object_t *dev,
+        bool,
+        void (*predicate)(int a, foo_t *f),
+        bool (*predicate2)(const int a, const foo_t **f)
+    );
+} test_qwe_interface_t;
+
+
+method _123get_attribute_attr_trampoline(void *info) -> (attr_value_t) {
+    return _123get_attribute_attr(info, 0, 0);
+}
+
+
+bank regs {
+    register reg[i < 2] size 8 @ 0x0 + i * 8 is max_val_reg {
+        param max_val = 128 * (i + 1) - 1;
+    }
+}
+
+
+param offset = 8;
+param byte_order default "little-endian";
+
+typedef struct {
+    int a;
+} struct_t;
+
+typedef layout "big-endian" {
+    uint24 x;
+    uint16 y;
+    uint32 z;
+} layout_t;
+
+typedef bitfields 32 {
+    uint3 a @ [31:29];
+    uint16 b @ [23:8];
+    uint7 c @ [7:1];
+    uint1 d @ [0];
+} bitfield_t;
+
+
+method m() {
+    local bitfields 32 {
+        uint8 x @ [7:0];
+    } bf;
+    bf = 0x000000ff;
+    bf.x = bf.x - 1;
+    local uint32 v = bf;
+}
+
+
+method m1() -> () {
+}
+
+
+method m1_void() -> (void) {
+}
+
+
+method m3(int a, int b) -> (int) {
+    return a + b;
+}
+
+
+method m5(int x) -> (int) throws {
+    if (x < 0) {
+        throw;
+    }
+    return x * x;
+}
+
+
+typedef struct {
+    int x;
+    int y;
+} struct2_t;
+
+
+method copy_struct(struct2_t *tgt, struct2_t src) {
+    *tgt = src;
+}
+
+
+session int id = 1;
+session bool active;
+session double table[4] = {0.1, 0.2, 0.4, 0.8};
+session (int x, int y) = (4, 3);
+session conf_object_t *obje;
+session typeof(CONSTANT_NUM) s_typeof_var;
+
+typedef struct {
+    int x;
+    struct {
+        int i;
+        int j;
+    } y;
+} struct3_t;
+
+session struct3_t s = {.x = 1, .y = {.i = 2, .j = 3}};
+
+saved int id = 1;
+saved bool active;
+saved double table[4] = {0.1, 0.2, 0.4, 0.8};
+
+
+method m_struct2_t() {
+    local struct2_t s;
+    copy_struct(&s, {1, 4});
+    copy_struct(&s, {.y = 1, .x = 4});
+    copy_struct(&s, {.y = 1, ...}); // Partial designated initializer
+}
+
+
+hook() h1;
+
+
+hook(int) h2;
+
+
+hook(int *, bool) h3;
+
+
+method send_now_checked_no_data(hook() h) {
+    local uint64 resumed = h.send_now();
+    if (resumed == 0) {
+        log error: "Unhandled message to hook";
+    }
+}
+
+
+method send_now_checked_int(hook(int) h, int x) {
+    local uint64 resumed = h.send_now(x);
+    if (resumed == 0) {
+        log error: "Unhandled message to hook";
+    }
+    local (const register *_, uint64 table_size) = _reginfo_table();
+}
+
+
+method m_namespaces() {
+    session int call_count = 0;
+    saved bool called = false;
+    local int n = 0;
+    local float f;
+}
+
+
+method m_tuple_locals() {
+    local (int n, bool b) = (0, true);
+    local (float f, void *p);
+}
+
+
+template t {
+    method m() default {
+        log info: "implementation from 't'";
+    }
+}
+
+
+template u is t {
+    method m() default {
+        log info: "implementation from 'u'";
+    }
+}
+
+
+template u2 is (t, u) {
+    shared method m() default {
+        log info: "implementation from 'u2'";
+    }
+}
+
+
+template super_init {
+    shared method declare_only();
+}
+
+
+template super_init2 is (super_init) {
+    shared method declare_only();
+
+    shared independent startup memoized method foo1() {
+    }
+
+    independent startup memoized method foo2() {
+    }
+
+    independent startup method foo3() {
+    }
+
+    shared independent startup method foo4() {
+    }
+
+    independent method foo6() {
+    }
+
+    shared independent method foo5() {
+    }
+}
+
+
+group g is u {
+    method m() {
+        log info: "final implementation";
+    }
+}
+
+
+method call_ms() {
+    // Logs "final implementation"
+    g.m();
+    // Logs "implementation from 'u'"
+    g.templates.u.m();
+    // Logs "implementation from 't'"
+    g.templates.t.m();
+}
+
+
+method allocator() {
+    local int *p;
+    p = new int;
+    // FIXME: p = new(int);
+    p = new int[123];
+    p = new int[SIZE + 12 * val];
+    // FIXME: p = new(int[SIZE + 12 * val]);
+    p = new foo;
+    p = new foo[123];
+    p = new foo *;
+    p = new const foo;
+    p = new const foo *[123];
+    p = new const foo *const;
+    // FIXME: p = new const foo* vect;
+    p = new const foo ***[123];
+
+    delete p;
+    delete (p);
+}
+
+
+method forloop_test() {
+    local int val = 0;
+    for (;;) {
+        ++val;
+    }
+
+    for (val = 0; val < 123; val++) {
+        ++val;
+    }
+
+    for (local int i = 0; i != len; i++, val++) {
+        ++val;
+    }
+
+    for (local int k = 0; k < 10; k++) {
+        if (k == 5) {
+            continue;
+        }
+    }
+}
+
+
+method testSwitch() {
+    switch (VAL) {
+    case 1:
+    case 2:
+        {
+            local int val;
+            return;
+        }
+    case PRARAM:
+    case CONST:
+        val = 123;
+        break;
+    case IF_FALLTHRUE_1:
+    #if (false) {
+    case 3:
+    case 3:
+        {
+            local int val;
+            return;
+        }
+    case PRARAM + 2:
+    case CONST + 2:
+        val = 123;
+        break;
+    case IF_FALLTHRUE_2:
+    } #else {
+    case 3:
+    case 3:
+        {
+            local int val;
+            return;
+        }
+    case PRARAM + 2:
+    case CONST + 2:
+        val = 123;
+        break;
+    case IF_FALLTHRUE_3:
+    }
+    case 321:
+    default:
+        val = "wer";
+        break;
+    }
+}
+
+
+inline method fooinline(int a, inline b) {
+    *b = a * a;
+}
+
+
+method arrays_init() -> (foo_t *) {
+    local boo_t *f = {.a = 1, .b = "qwerty", ...};
+    local foo_t *f = {f, 12345};
+    return f;
+}
+
+
+method testSwitchStatementsAfterHashIf() {
+    switch (cmd) {
+    case CMD_RESET:
+        reset_device();
+        break;
+    #if (ENABLE_FEATURE_A) {
+    case CMD_EXEC_A:
+        execute_a();
+    } #else {
+    case CMD_EXEC_B:
+        execute_b();
+    }
+        log info, 1, 0: "Command executed";
+        break;
+    default:
+        log error, 1, 0: "Unknown command: %d",
+            cmd;
+        break;
+    }
+}
+
+
+method testSwitchHashIfFallthrough() {
+    switch (status) {
+    case STATUS_IDLE:
+        break;
+    case STATUS_BUSY:
+    #if (HAS_SPECIAL_MODE_1) {
+    case STATUS_SPECIAL_1:
+    }
+    #if (HAS_SPECIAL_MODE_2) {
+    case STATUS_SPECIAL_2:
+    }
+        common_busy_handler();
+        break;
+    default:
+        break;
+    }
+}
+
+
+method testSwitchNested() {
+    switch (mode) {
+    case MODE_NORMAL:
+        switch (submode) {
+        case 0:
+            val = 0;
+            break;
+        case 1:
+            val = 1;
+            break;
+        default:
+            val = -1;
+            break;
+        }
+        break;
+    case MODE_DIRECT:
+        val = direct_val;
+        break;
+    default:
+        break;
+    }
+}
+
+
+method testMixedComments() {
+    /********************************
+    // Multiline banner comment with even asterisks
+    // and internal line comments
+    ********************************/
+    local int x = 0;
+
+    /****"Comment with quotes and asterisks"****/
+    x = 1;
+
+    /* Single-line even asterisks **/
+    x = 2;
+}
+
+
+method control_flow_statements() {
+    local int val = 5;
+
+    while (val > 0) {
+        val--;
+    }
+
+    do {
+        val++;
+    } while (val < 10);
+
+    try {
+        throw;
+    } catch {
+        log info: "caught exception";
+    }
+
+    assert (val >= 0);
+
+    goto end_label;
+
+    warning "This feature is deprecated";
+    warning ("Parenthesized warning message");
+
+    local list_t num_list = [1, 2, 3];
+    select item in (num_list) where (item > 0) {
+        log info: "found %d",
+            item;
+    } else {
+        log info: "not found";
+    }
+
+    #select citem in ([10, 20]) where (citem > 15) {
+        log info: "const selected %d",
+            citem;
+    } #else {
+        log info: "const not found";
+    }
+}
+
+
+method expressions_and_slices() {
+    local typeof(1 + 2) var_typeof = 3;
+    local uint32 slice_val = 0x12345678;
+    local uint8 byte0 = slice_val[7:0];
+    local uint8 byte1 = slice_val[15:8, be];
+    local uint8 bit_endian = slice_val[3, le];
+
+    slice_val += 1;
+    slice_val -= 1;
+    slice_val *= 2;
+    slice_val /= 2;
+    slice_val %= 2;
+    slice_val |= 4;
+    slice_val &= 0xff;
+    slice_val ^= 2;
+    slice_val <<= 1;
+    slice_val >>= 1;
+
+    local int sz1 = sizeoftype uint32;
+    local int sz2 = sizeoftype(struct_t);
+
+    local list_t empty_list = [];
+    local list_t num_list = [1, 2, 3];
+    local int first_item = num_list[0];
+    local int ternary_val = (first_item > 0) ? 100 : 200;
+
+    (sz1, sz2) = (10, 20);
+}
+
+
+method after_statements() {
+    after(0.1): my_method(1);
+    after 1.5 s: my_method(2);
+    after: my_method(3);
+}
+
+
+method log_levels_test() {
+    log info, 1 then 2: "First time at level 1, then level 2";
+}

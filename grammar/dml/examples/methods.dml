@@ -1,0 +1,60 @@
+dml 1.4;
+
+
+method simple() {
+}
+
+
+method simple1() {
+}
+
+
+method simple2() {
+}
+
+
+method simple3() {
+}
+
+
+method simple4() {
+}
+
+
+method simple_arg(int arg) {
+}
+
+
+method simple_constarg(const int arg) {
+}
+
+
+method simple_arg_2(int arg, int arg2) {
+}
+
+
+method simple_arg_2_ml(int arg, int arg2) {
+}
+
+
+method simple_arg_3(int arg, int arg2, int arg3) {
+}
+
+
+method simple_arg_3_ml(int arg, int arg2, int arg3) {
+}
+
+
+method simple_return() -> (int) {
+    return 0;
+}
+
+
+method simple_return2() -> (int, int) {
+    return (0, 1);
+}
+
+
+method simple_return3() -> (int, int, int) {
+    return (0, 1, 2);
+}

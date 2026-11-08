@@ -1,0 +1,13 @@
+{
+    "files.readonlyInclude": {
+        "pkg/dmlex/dml_*.go": true,
+        "pkg/dmlex/*_string.go": true,
+        "*.interp": true,
+        "*.tokens": true,
+        "coverage.html": true,
+        "coverage.out": true
+    },
+    "files.exclude": {
+        "pkg/dmlex/*_string.go": true
+    }
+}

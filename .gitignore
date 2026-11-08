@@ -1,0 +1,28 @@
+*.wasm
+cmd/dml-web-format/wasm_exec.js
+
+# Ignore nmp pacakges {{{
+node_modules/
+package-lock.json
+package.json
+# }}}
+
+# antlr {{{
+*.jar
+*.interp
+*.tokens
+.antlr/
+# }}}
+
+# go generate {{{
+grammar/dml/dml_*.go
+pkg/dmlex/tokentype_string.go
+# }}}
+
+build/
+coverage.html
+coverage.out
+.docs-cache/
+venv/
+*.log
+dist/

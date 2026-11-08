@@ -1,0 +1,23 @@
+dml 1.4;
+
+device this_is_a_device_name;
+
+
+import "far/dml/file.dml";
+
+
+template thing {
+    method do_thing(bool arg) -> (uint64) {
+        local uint64 value = (arg) ? 1234 : 5678;
+        return value;
+    }
+}
+
+
+method hard_reset() {
+    if (dev.init) {
+        default();
+    } else {
+        dev.init = true;
+    }
+}

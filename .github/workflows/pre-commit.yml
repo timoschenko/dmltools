@@ -1,0 +1,92 @@
+name: Pre-commit
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main, trunk]
+
+jobs:
+  pre-commit:
+    name: Build, Test & Pre-commit (${{ matrix.go }})
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"
+    strategy:
+      fail-fast: false
+      matrix:
+        go:
+          - go.mod
+          - oldstable
+          - stable
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Java (for ANTLR)
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Set up Go (${{ matrix.go }})
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ matrix.go != 'go.mod' && matrix.go || '' }}
+          go-version-file: ${{ matrix.go == 'go.mod' && 'go.mod' || '' }}
+          cache: true
+
+      - name: Set up Python
+        if: matrix.go == 'go.mod'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Cache ANTLR jars and pre-commit environments
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/deps/*.jar
+            ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml', 'Makefile') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-
+
+      - name: Install stringer
+        run: |
+          GOTOOLCHAIN=auto go install golang.org/x/tools/cmd/stringer@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Generate (make generate)
+        timeout-minutes: 2
+        run: make generate
+
+      - name: Build (make release)
+        timeout-minutes: 3
+        run: make release
+
+      - name: Test (make test)
+        timeout-minutes: 6
+        run: make test
+
+      - name: Test Ndebug (make test-ndebug)
+        timeout-minutes: 6
+        run: make test-ndebug
+
+      # Run lint only for target version
+      - name: Install golangci-lint
+        if: matrix.go == 'go.mod'
+        timeout-minutes: 5
+        run: |
+          curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.11.2
+
+      - name: Install pre-commit
+        if: matrix.go == 'go.mod'
+        timeout-minutes: 5
+        run: pip install pre-commit
+
+      - name: Run pre-commit hooks
+        if: matrix.go == 'go.mod'
+        timeout-minutes: 5
+        run: pre-commit run --all-files --show-diff-on-failure

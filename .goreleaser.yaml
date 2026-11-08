@@ -1,0 +1,158 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: dmltools
+
+before:
+  hooks:
+    - go mod tidy
+    - make cmd/dml-web-format/wasm_exec.js
+
+builds:
+  - id: dmlfmt
+    dir: .
+    main: ./cmd/dmlfmt
+    binary: dmlfmt
+    flags:
+      - -tags=dmltools.ndebug
+    targets:
+      - linux_amd64
+      - linux_arm64
+      - windows_amd64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.Version={{.Version}}
+      - -X main.GitCommit={{.Commit}}
+      - -X main.BuildDate={{.Date}}
+
+  - id: dmlfmt-debug
+    dir: .
+    main: ./cmd/dmlfmt
+    binary: dmlfmt
+    targets:
+      - linux_amd64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -X main.Version={{.Version}}
+      - -X main.GitCommit={{.Commit}}
+      - -X main.BuildDate={{.Date}}
+
+  - id: dmlast-debug
+    dir: .
+    main: ./cmd/dmlast
+    binary: dmlast
+    targets:
+      - linux_amd64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -X main.Version={{.Version}}
+      - -X main.GitCommit={{.Commit}}
+      - -X main.BuildDate={{.Date}}
+
+  - id: dml-web-format
+    dir: .
+    main: ./cmd/dml-web-format
+    binary: main
+    targets:
+      - js_wasm
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+    hooks:
+      post:
+        - mkdir -p dist/web
+        - cp cmd/dml-web-format/index.html cmd/dml-web-format/style.css cmd/dml-web-format/highlighter.js cmd/dml-web-format/app.js cmd/dml-web-format/wasm_exec.js dist/web/
+        - cp "{{ .Path }}" dist/web/main.wasm
+
+archives:
+  - id: dmltools
+    ids:
+      - dmlfmt
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: "dmltools_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE*
+
+  - id: dmltools-debug
+    ids:
+      - dmlfmt-debug
+      - dmlast-debug
+    formats:
+      - tar.gz
+    name_template: "dmltools-debug_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE*
+
+  - id: dml-web-format
+    ids:
+      - dml-web-format
+    formats:
+      - zip
+    name_template: "dml-web-format_{{ .Version }}"
+    files:
+      - src: "cmd/dml-web-format/*.html"
+        dst: "."
+        strip_parent: true
+      - src: "cmd/dml-web-format/*.css"
+        dst: "."
+        strip_parent: true
+      - src: "cmd/dml-web-format/*.js"
+        dst: "."
+        strip_parent: true
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+changelog:
+  sort: asc
+  use: git
+  groups:
+    - title: "Features"
+      regexp: '^feat(\(.*\))?:'
+      order: 0
+    - title: "Bug Fixes"
+      regexp: '^fix(\(.*\))?:'
+      order: 1
+    - title: "Performance Improvements"
+      regexp: '^perf(\(.*\))?:'
+      order: 2
+    - title: "Documentation"
+      regexp: '^docs(\(.*\))?:'
+      order: 3
+  filters:
+    exclude:
+      - '^Merge '
+      - '^merge '
+      - '^chore\(deps\):'
+      - '^(refactor|chore|test|ci|infra)(\(.*\))?:'
+
+release:
+  github:
+    owner: timoschenko
+    name: dmltools
+  name_template: "{{ .Tag }}"
+  header: |
+    ## DML Tools {{ .Tag }}
+  mode: replace
+  replace_existing_artifacts: true
+  replace_existing_draft: true
+  prerelease: auto
+  make_latest: '{{ if or (contains .Tag "nightly") (contains .Tag "test") (ne .Prerelease "") }}false{{ else }}true{{ end }}'
+  draft: false
+  extra_files:
+    - glob: "./coverage.html"

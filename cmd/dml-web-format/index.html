@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>DML Formatter</title>
+        <link rel="stylesheet" href="style.css?v=3" />
+    </head>
+    <body>
+        <header>
+            <h1>DML Formatter (WebAssembly)</h1>
+            <div class="controls">
+                <label
+                    for="lineWrapInput"
+                    class="setting-label"
+                    title="Maximum line width (MaxLineCap) and wrap guide column"
+                >
+                    Line Wrap:
+                    <input
+                        type="number"
+                        id="lineWrapInput"
+                        min="20"
+                        max="300"
+                        value="80"
+                    />
+                </label>
+                <button id="formatBtn" disabled>Loading WebAssembly...</button>
+                <div class="trace-group">
+                    <button
+                        id="downloadTraceBtn"
+                        class="btn-secondary"
+                        disabled
+                        title="Download collected trace as JSON (Format DML first)"
+                    >
+                        <svg
+                            class="icon"
+                            viewBox="0 0 16 16"
+                            width="14"
+                            height="14"
+                            fill="currentColor"
+                        >
+                            <path
+                                d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"
+                            ></path>
+                            <path
+                                d="M7.25 7.689V2a.75.75 0 0 1 1.5 0v5.689l1.97-1.969a.749.749 0 1 1 1.06 1.06l-3.25 3.25a.749.749 0 0 1-1.06 0L4.22 6.78a.749.749 0 1 1 1.06-1.06l1.97 1.969Z"
+                            ></path>
+                        </svg>
+                        <span>Download Trace</span>
+                    </button>
+                    <button
+                        id="openPerfettoBtn"
+                        class="btn-secondary"
+                        disabled
+                        title="Open trace directly in ui.perfetto.dev (Format DML first)"
+                    >
+                        <svg
+                            class="icon"
+                            viewBox="0 0 16 16"
+                            width="14"
+                            height="14"
+                            fill="currentColor"
+                        >
+                            <path
+                                d="M3.75 2h3.5a.75.75 0 0 1 0 1.5h-3.5a.25.25 0 0 0-.25.25v8.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-3.5a.75.75 0 0 1 1.5 0v3.5A1.75 1.75 0 0 1 12.25 14h-8.5A1.75 1.75 0 0 1 2 12.25v-8.5C2 2.784 2.784 2 3.75 2Zm6.88-1a.75.75 0 0 1 .75-.75h3.87a.75.75 0 0 1 .75.75v3.87a.75.75 0 0 1-1.5 0V3.56l-5.47 5.47a.75.75 0 0 1-1.06-1.06l5.47-5.47h-2.06a.75.75 0 0 1-.75-.75Z"
+                            ></path>
+                        </svg>
+                        <span>Open in Perfetto</span>
+                    </button>
+                    <button
+                        id="openChromeTracingBtn"
+                        class="btn-secondary"
+                        disabled
+                        title="Open chrome://tracing guidance and load trace (Format DML first)"
+                    >
+                        <svg
+                            class="icon"
+                            viewBox="0 0 16 16"
+                            width="14"
+                            height="14"
+                            fill="currentColor"
+                        >
+                            <path
+                                d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.47 6.47 0 0 0-4.634 1.956l2.766 4.79A2.5 2.5 0 0 1 8.5 7h4.94A6.505 6.505 0 0 0 8 1.5Zm-5.32 3.42A6.474 6.474 0 0 0 1.5 8c0 3.18 2.28 5.827 5.318 6.38L9.584 9.6A2.5 2.5 0 0 1 7.15 7.15L2.68 4.92Zm7.746 4.306-2.766 4.79A6.504 6.504 0 0 0 14.5 8c0-.7-.11-1.373-.314-2h-4.94a2.5 2.5 0 0 1-.82 3.226Z"
+                            ></path>
+                        </svg>
+                        <span>chrome://tracing</span>
+                    </button>
+                <div class="panel-toggles">
+                    <button
+                        type="button"
+                        id="headerToggleInputBtn"
+                        class="btn-secondary btn-panel-toggle"
+                        title="Toggle Input Panel (Left)"
+                        aria-label="Toggle Input Panel"
+                    >
+                        <svg
+                            class="icon"
+                            viewBox="0 0 16 16"
+                            width="14"
+                            height="14"
+                            fill="currentColor"
+                        >
+                            <path
+                                d="M0 3.75C0 2.784.784 2 1.75 2h12.5c.966 0 1.75.784 1.75 1.75v8.5A1.75 1.75 0 0 1 14.25 14H1.75A1.75 1.75 0 0 1 0 12.25Zm1.75-.25a.25.25 0 0 0-.25.25v8.5c0 .138.112.25.25.25H5V3.5ZM6.5 12.5h7.75a.25.25 0 0 0 .25-.25v-8.5a.25.25 0 0 0-.25-.25H6.5Z"
+                            ></path>
+                        </svg>
+                        <span>Input</span>
+                    </button>
+                    <button
+                        type="button"
+                        id="headerToggleStatsBtn"
+                        class="btn-secondary btn-panel-toggle"
+                        title="Toggle Token Stats Panel (Right)"
+                        aria-label="Toggle Token Stats Panel"
+                    >
+                        <svg
+                            class="icon"
+                            viewBox="0 0 16 16"
+                            width="14"
+                            height="14"
+                            fill="currentColor"
+                        >
+                            <path
+                                d="M0 3.75C0 2.784.784 2 1.75 2h12.5c.966 0 1.75.784 1.75 1.75v8.5A1.75 1.75 0 0 1 14.25 14H1.75A1.75 1.75 0 0 1 0 12.25Zm1.75-.25a.25.25 0 0 0-.25.25v8.5c0 .138.112.25.25.25H9.5V3.5ZM11 12.5h3.25a.25.25 0 0 0 .25-.25v-8.5a.25.25 0 0 0-.25-.25H11Z"
+                            ></path>
+                        </svg>
+                        <span>Stats</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+        <div id="status" class="error"></div>
+        <div class="container">
+            <!-- Left Column: Input Panel (Collapsible) -->
+            <div class="panel-column collapsible" id="inputPanel">
+                <!-- Collapsed Rail -->
+                <div class="panel-rail" id="inputPanelRail" title="Expand Input Panel">
+                    <button
+                        type="button"
+                        class="rail-btn"
+                        id="expandInputBtn"
+                        title="Expand Input Panel"
+                        aria-label="Expand Input Panel"
+                    >
+                        <svg
+                            class="icon"
+                            viewBox="0 0 16 16"
+                            width="14"
+                            height="14"
+                            fill="currentColor"
+                        >
+                            <path
+                                d="m6.427 4.427 3.396 3.396a.25.25 0 0 1 0 .354l-3.396 3.396A.25.25 0 0 1 6 11.396V4.604a.25.25 0 0 1 .427-.177Z"
+                            ></path>
+                        </svg>
+                    </button>
+                    <span class="rail-label">Input DML</span>
+                </div>
+
+                <!-- Expanded Panel Content -->
+                <div class="panel-content textarea-container">
+                    <div class="editor-header">
+                        <label for="input">Input DML</label>
+                        <div class="editor-header-actions">
+                            <span
+                                class="cursor-info"
+                                id="inputCursorInfo"
+                                title="Cursor position and selected characters"
+                                >Ln 1, Col 1</span
+                            >
+                            <span class="line-count" id="inputLineCount"
+                                >1 line</span
+                            >
+                            <button
+                                type="button"
+                                class="btn-icon collapse-btn"
+                                id="collapseInputBtn"
+                                title="Collapse Input Panel"
+                                aria-label="Collapse Input Panel"
+                            >
+                                <svg
+                                    class="icon"
+                                    viewBox="0 0 16 16"
+                                    width="14"
+                                    height="14"
+                                    fill="currentColor"
+                                >
+                                    <path
+                                        d="m9.573 4.427-3.396 3.396a.25.25 0 0 0 0 .354l3.396 3.396A.25.25 0 0 0 10 11.396V4.604a.25.25 0 0 0-.427-.177Z"
+                                    ></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="editor-wrapper">
+                        <div
+                            class="line-numbers"
+                            id="inputLineNumbers"
+                            aria-hidden="true"
+                        >
+                            1
+                        </div>
+                        <div class="code-container">
+                            <div
+                                class="wrap-guide"
+                                id="inputWrapGuide"
+                                aria-hidden="true"
+                            ></div>
+                            <pre
+                                class="highlight-layer"
+                                id="inputHighlight"
+                                aria-hidden="true"
+                            ><code></code></pre>
+                            <textarea
+                                id="input"
+                                class="code-input"
+                                spellcheck="false"
+                                autocomplete="off"
+                                autocapitalize="off"
+                                placeholder="Enter DML here..."
+                            ></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Left Resizer (Divider between Input and Output) -->
+            <div
+                class="resizer"
+                id="resizerLeft"
+                role="separator"
+                aria-orientation="vertical"
+                title="Drag to resize Input / Output (Double-click to reset)"
+            ></div>
+
+            <!-- Middle Column: Formatted Output (Pinned) -->
+            <div class="panel-column pinned" id="outputPanel">
+                <div class="panel-content textarea-container">
+                    <div class="editor-header">
+                        <label for="output">Formatted DML</label>
+                        <div class="editor-header-actions">
+                            <label
+                                class="toggle-label"
+                                title="Toggle visible spaces (·) and tabs (→)"
+                            >
+                                <input
+                                    type="checkbox"
+                                    id="outputWhitespaceToggle"
+                                    checked
+                                />
+                                Show Whitespace
+                            </label>
+                            <label
+                                class="toggle-label"
+                                title="Toggle line lengths in gutter"
+                            >
+                                <input
+                                    type="checkbox"
+                                    id="outputLineLengthToggle"
+                                    checked
+                                />
+                                Show Line Length
+                            </label>
+                            <span
+                                class="cursor-info"
+                                id="outputCursorInfo"
+                                title="Cursor position and selected characters"
+                                >Ln 1, Col 1</span
+                            >
+                            <span class="line-count" id="outputLineCount"
+                                >0 lines</span
+                            >
+                        </div>
+                    </div>
+                    <div class="editor-wrapper">
+                        <div
+                            class="line-numbers"
+                            id="outputLineNumbers"
+                            aria-hidden="true"
+                        >
+                            1
+                        </div>
+                        <div class="code-container">
+                            <div
+                                class="wrap-guide"
+                                id="outputWrapGuide"
+                                aria-hidden="true"
+                            ></div>
+                            <pre
+                                class="highlight-layer"
+                                id="outputHighlight"
+                                aria-hidden="true"
+                            ><code></code></pre>
+                            <textarea
+                                id="output"
+                                class="code-input"
+                                readonly
+                                spellcheck="false"
+                                autocomplete="off"
+                                autocapitalize="off"
+                                placeholder="Output will appear here..."
+                            ></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Resizer (Divider between Output and Stats) -->
+            <div
+                class="resizer"
+                id="resizerRight"
+                role="separator"
+                aria-orientation="vertical"
+                title="Drag to resize Output / Stats (Double-click to reset)"
+            ></div>
+
+            <!-- Right Column: Token Info & Stats Panel (Collapsible Placeholder) -->
+            <div class="panel-column collapsible" id="statsPanel">
+                <!-- Collapsed Rail -->
+                <div class="panel-rail" id="statsPanelRail" title="Expand Token Stats">
+                    <button
+                        type="button"
+                        class="rail-btn"
+                        id="expandStatsBtn"
+                        title="Expand Token Stats"
+                        aria-label="Expand Token Stats"
+                    >
+                        <svg
+                            class="icon"
+                            viewBox="0 0 16 16"
+                            width="14"
+                            height="14"
+                            fill="currentColor"
+                        >
+                            <path
+                                d="m9.573 4.427-3.396 3.396a.25.25 0 0 0 0 .354l3.396 3.396A.25.25 0 0 0 10 11.396V4.604a.25.25 0 0 0-.427-.177Z"
+                            ></path>
+                        </svg>
+                    </button>
+                    <span class="rail-label">Token Stats</span>
+                </div>
+
+                <!-- Expanded Panel Content -->
+                <div class="panel-content stats-container">
+                    <div class="editor-header">
+                        <label>Token Info &amp; Stats</label>
+                        <div class="editor-header-actions">
+                            <button
+                                type="button"
+                                class="btn-icon collapse-btn"
+                                id="collapseStatsBtn"
+                                title="Collapse Token Stats"
+                                aria-label="Collapse Token Stats"
+                            >
+                                <svg
+                                    class="icon"
+                                    viewBox="0 0 16 16"
+                                    width="14"
+                                    height="14"
+                                    fill="currentColor"
+                                >
+                                    <path
+                                        d="m6.427 4.427 3.396 3.396a.25.25 0 0 1 0 .354l-3.396 3.396A.25.25 0 0 1 6 11.396V4.604a.25.25 0 0 1 .427-.177Z"
+                                    ></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="stats-wrapper">
+                        <div class="stats-card-grid stats-grid-card">
+                            <div class="stats-metric-card" title="Total Tokens">
+                                <div class="metric-value" id="statsTokenCount">-</div>
+                                <div class="metric-label">Tokens</div>
+                            </div>
+                            <div class="stats-metric-card" title="Trace Decisions">
+                                <div class="metric-value" id="statsTraceEvents">-</div>
+                                <div class="metric-label">Decisions</div>
+                            </div>
+                            <div class="stats-metric-card" title="Output Lines">
+                                <div class="metric-value" id="statsLinesFormatted">-</div>
+                                <div class="metric-label">Lines</div>
+                            </div>
+                            <div class="stats-metric-card" title="Format Time">
+                                <div class="metric-value" id="statsDuration">-</div>
+                                <div class="metric-label">Time</div>
+                            </div>
+                        </div>
+
+
+                        <div class="stats-section">
+                            <div class="stats-section-title">Token Info</div>
+                            <div id="tokenInfoBox" class="stats-placeholder-box" style="text-align:left; padding: 8px;">
+                                <div class="stats-placeholder-title" style="margin-bottom: 8px;">Click a token to view details</div>
+                                <div id="tokenInfoDetails" style="display: none;">
+                                    <table class="token-info-table">
+                                        <tbody>
+                                            <tr>
+                                                <th>Name:</th>
+                                                <td id="tokenInfoName" class="copyable-value" title="Click to copy"></td>
+                                            </tr>
+                                            <tr>
+                                                <th>Type ID:</th>
+                                                <td id="tokenInfoType" class="copyable-value" title="Click to copy"></td>
+                                            </tr>
+                                            <tr>
+                                                <th>Text:</th>
+                                                <td id="tokenInfoText" class="copyable-value" title="Click to copy"></td>
+                                            </tr>
+                                            <tr>
+                                                <th>Line:</th>
+                                                <td id="tokenInfoLine" class="copyable-value" title="Click to copy"></td>
+                                            </tr>
+                                            <tr>
+                                                <th>Column:</th>
+                                                <td id="tokenInfoCol" class="copyable-value" title="Click to copy"></td>
+                                            </tr>
+                                            <tr>
+                                                <th>Start:</th>
+                                                <td id="tokenInfoStart" class="copyable-value" title="Click to copy"></td>
+                                            </tr>
+                                            <tr>
+                                                <th>Stop:</th>
+                                                <td id="tokenInfoStop" class="copyable-value" title="Click to copy"></td>
+                                            </tr>
+                                            <tr>
+                                                <th>Group:</th>
+                                                <td id="tokenInfoGroup" class="copyable-value" title="Click to copy">-</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+
+                                    <div class="token-stats-tables" id="tokenWinLossTables">
+                                        <div class="winloss-section">
+                                            <h4>Before</h4>
+                                            <div class="winloss-subtitle">Current Token Decision</div>
+                                            <div class="decision-card stats-panel" id="currentBeforeDecisionCard"></div>
+                                            <div class="winloss-subtitle">All Decisions Summary</div>
+                                            <table class="stats-table stats-panel" id="beforeResolutionsTable">
+                                                <thead><tr><th>Separator</th><th>Win / Loss</th><th>Unique Types</th><th>Total</th></tr></thead>
+                                                <tbody></tbody>
+                                            </table>
+                                        </div>
+                                        <div class="winloss-section">
+                                            <h4>After</h4>
+                                            <div class="winloss-subtitle">Current Token Decision</div>
+                                            <div class="decision-card stats-panel" id="currentAfterDecisionCard"></div>
+                                            <div class="winloss-subtitle">All Decisions Summary</div>
+                                            <table class="stats-table stats-panel" id="afterResolutionsTable">
+                                                <thead><tr><th>Separator</th><th>Win / Loss</th><th>Unique Types</th><th>Total</th></tr></thead>
+                                                <tbody></tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- chrome://tracing modal dialog -->
+        <div
+            id="chromeTracingModal"
+            class="modal-backdrop hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="chromeTracingModalTitle"
+        >
+            <div class="modal-dialog">
+                <div class="modal-header">
+                    <h2 id="chromeTracingModalTitle">
+                        Open in chrome://tracing
+                    </h2>
+                    <button
+                        type="button"
+                        class="modal-close-btn"
+                        id="closeChromeTracingModal"
+                        aria-label="Close"
+                    >
+                        &times;
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="modal-alert-info">
+                        <strong>dml_trace.json</strong> was downloaded to your
+                        downloads folder.
+                    </div>
+                    <p class="modal-notice">
+                        Web browsers block direct navigation to
+                        <code>chrome://</code> internal URLs from web pages for
+                        security.
+                    </p>
+                    <div class="modal-steps">
+                        <div class="modal-step">
+                            <span class="step-badge">1</span>
+                            <div class="step-content">
+                                <label for="chromeTracingUrlInput"
+                                    >Open a new tab in Google Chrome and
+                                    navigate to:</label
+                                >
+                                <div class="copy-box">
+                                    <input
+                                        type="text"
+                                        id="chromeTracingUrlInput"
+                                        readonly
+                                        value="chrome://tracing"
+                                    />
+                                    <button
+                                        type="button"
+                                        id="copyChromeTracingUrlBtn"
+                                        class="btn-secondary"
+                                    >
+                                        Copy URL
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-step">
+                            <span class="step-badge">2</span>
+                            <div class="step-content">
+                                <p>
+                                    Click the <strong>Load</strong> button in
+                                    the top toolbar of
+                                    <code>chrome://tracing</code> and select the
+                                    downloaded
+                                    <strong>dml_trace.json</strong> file (or
+                                    drag and drop it into the page).
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button
+                        type="button"
+                        id="modalDownloadTraceBtn"
+                        class="btn-secondary"
+                    >
+                        Re-download Trace
+                    </button>
+                    <button
+                        type="button"
+                        id="dismissChromeTracingModal"
+                        class="btn-primary"
+                    >
+                        Done
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <script src="wasm_exec.js"></script>
+        <script src="highlighter.js"></script>
+        <script src="app.js?v=4"></script>
+    </body>
+</html>
