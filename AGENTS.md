@@ -25,7 +25,7 @@ make test
 # Fast focused testing (bypasses ANTLR codegen)
 go test ./test/printer/...
 go test -v ./test/printer -run TestAssertStatement
-go test ./test/... ./cmd/... ./pkg/... ./tools/...  # Never run 'go test ./...' from root (scans ./venv)
+go test ./test/... ./cmd/... ./pkg/...              # Never run 'go test ./...' from root (scans ./venv)
 
 # Build binaries (outputs to build/bin/dmlfmt, build/bin/dmlast)
 make build/bin/dmlfmt

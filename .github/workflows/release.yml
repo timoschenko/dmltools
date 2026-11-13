@@ -58,6 +58,14 @@ jobs:
       - name: Generate test coverage report
         run: make coverage
 
+      - name: Run license check
+        timeout-minutes: 2
+        run: make license-check
+
+      - name: Run tools test suite
+        timeout-minutes: 3
+        run: make test-tools
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:

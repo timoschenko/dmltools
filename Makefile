@@ -110,7 +110,7 @@ $(DMLEX_GENERATED_FLAG): $(G4_GENERATED_FLAG) $(BUILD_ENV_DIR)
 $(DMLEX_GENERATED_FLAG):
 	rm -f ./pkg/dmlex/dml_parser*.go
 	cp $(filter-out $(G4_DML_DIR)/dml_parser.go,$(G4_GENERATED_FILES)) ./pkg/dmlex/
-	$(GO) run ./tools/baker -out ./pkg/dmlex $(G4_DML_DIR)/dml_parser.go > /dev/null
+	(cd tools/baker && $(GO) run . -out $(realpath .)/pkg/dmlex $(realpath .)/$(G4_DML_DIR)/dml_parser.go > /dev/null)
 	rm -f $(G4_GENERATED_FILES)
 ifneq ($(filter-out 0 false FALSE no NO,$(CI)),)
 	@$(CHECK_GENERATED_CLEAN)
@@ -175,10 +175,10 @@ web: build-wasm
 	$(PYTHON) -m http.server --directory cmd/dml-web-format --bind 127.0.0.1 8080
 
 test: build-gocache
-	$(GO) test -timeout 60s ./test/... ./cmd/... ./pkg/... ./tools/...
+	$(GO) test -timeout 60s ./test/... ./cmd/... ./pkg/...
 
 test-ndebug: build-gocache
-	$(GO) test -tags dmltools.ndebug -timeout 60s ./test/... ./cmd/... ./pkg/... ./tools/...
+	$(GO) test -tags dmltools.ndebug -timeout 60s ./test/... ./cmd/... ./pkg/...
 
 coverage: build-gocache
 	$(GO) test -timeout 60s -coverprofile=coverage.out -coverpkg=./pkg/...,./cmd/... ./test/... ./cmd/... ./pkg/...
@@ -235,4 +235,11 @@ doc-web:
 	@open "http://localhost:6060/pkg/github.com/timoschenko/dmltools/" 2>/dev/null || true
 	-$(GODOC) -http=:6060
 
-.PHONY: format generate test test-ndebug coverage clean-coverage clean clean-gocache clean-go-testcache clean-go-fuzzcache web goreleaser-check goreleaser-build goreleaser-snapshot web-dist doc doc-web
+license-check:
+	(cd tools/licensecheck && $(GO) run . -root ../..)
+
+test-tools:
+	(cd tools/licensecheck && $(GO) test -v ./...)
+	(cd tools/baker && $(GO) test -v ./...)
+
+.PHONY: format generate test test-ndebug coverage clean-coverage clean clean-gocache clean-go-testcache clean-go-fuzzcache web goreleaser-check goreleaser-build goreleaser-snapshot web-dist doc doc-web license-check test-tools
