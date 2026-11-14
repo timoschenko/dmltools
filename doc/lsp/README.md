@@ -1,7 +1,7 @@
 # DML Language Server (`dmlsp`)
 
 `dmlsp` is the Language Server Protocol (LSP) server for Device Modeling Language.
-It provides IDE and editor integrations with real-time syntax feedback and code navigation.
+It provides IDE and editor integrations with real-time syntax feedback, semantic highlighting, and code navigation.
 
 ---
 
@@ -21,6 +21,7 @@ over **JSON-RPC 2.0** via standard I/O (`stdin`/`stdout`).
   - Dotted member chains (such as `regs.r1.f1`) and hierarchy keywords (`this`, `parent`, `dev`)
   - `method` declarations and definitions, input parameters, and named return parameters
   - `local`, `session`, and `saved` variables, `param`, `constant`, `hook`, `loggroup`, `typedef`, and `extern` declarations
+- **Semantic Tokens Highlighting**: Computes semantic tokens for full files (`textDocument/semanticTokens/full`) and viewport ranges (`textDocument/semanticTokens/range`) using a hybrid lexer-baseline and local AST/symbol pass that handles DML keywords used as identifiers, templates, objects, types, modifiers, and graceful fallback on syntax errors or `dml 1.2;` files.
 - **Live Editor Synchronization**: Tracks unsaved edits in memory (supporting incremental updates) while automatically falling back to on-disk files when resolving unopened imported files.
 
 ---

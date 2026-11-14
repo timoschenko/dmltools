@@ -26,14 +26,19 @@ func init() {
 // Diagnose parses DML content and returns syntax errors as LSP diagnostics,
 // along with the parsed AST (which is non-nil unless completely unparseable).
 func Diagnose(content string) ([]protocol.Diagnostic, antlr.ParseTree) {
-	input := stream.NewHashedBufferFromString("memory", content)
+	diags, _, tree := diagnoseWithTokens(content)
+	return diags, tree
+}
+
+func diagnoseWithTokens(
+	content string,
+) ([]protocol.Diagnostic, *antlr.CommonTokenStream, antlr.ParseTree) {
 	errListener := dmlex.NewErrorListener("memory", 0)
 
-	file := dmlex.ParseStream(input, errListener)
-	tree := file.Parser.Dml()
+	tokens, tree := parseStreamAndTokens("memory", content, errListener)
 
 	if len(errListener.Errors) == 0 {
-		return []protocol.Diagnostic{}, tree
+		return []protocol.Diagnostic{}, tokens, tree
 	}
 
 	lineOffsets := computeLineOffsets(content)
@@ -84,5 +89,20 @@ func Diagnose(content string) ([]protocol.Diagnostic, antlr.ParseTree) {
 		})
 	}
 
-	return diags, tree
+	return diags, tokens, tree
+}
+
+func parseStreamAndTokens(
+	name string,
+	content string,
+	errListener *dmlex.ErrorListener,
+) (*antlr.CommonTokenStream, antlr.ParseTree) {
+	input := stream.NewHashedBufferFromString(name, content)
+	file := dmlex.ParseStream(input, errListener)
+	tokens, _ := file.Parser.GetTokenStream().(*antlr.CommonTokenStream)
+	tree := file.Parser.Dml()
+	if tokens != nil {
+		tokens.Fill()
+	}
+	return tokens, tree
 }
