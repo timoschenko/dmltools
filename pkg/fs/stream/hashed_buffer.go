@@ -64,14 +64,10 @@ func NewHashedBufferFromStream(
 	data := sb.String()
 
 	hb := HashedBuffer{
-		baseStreamHash: baseStreamHash{
-			hash: inHasher.Sum(),
-		},
-		antlrStreamWrapper: antlrStreamWrapper{
-			filename: filename,
-			index:    0,
-			size:     len(data),
-		},
+		hash:     inHasher.Sum(),
+		filename: filename,
+		index:    0,
+		size:     len(data),
 		data:     data,
 		capacity: sb.Cap(),
 	}
@@ -88,14 +84,10 @@ func NewHashedBufferFromString(filename string, data string) *HashedBuffer {
 	}
 
 	return &HashedBuffer{
-		baseStreamHash: baseStreamHash{
-			hash: inHasher.Sum(),
-		},
-		antlrStreamWrapper: antlrStreamWrapper{
-			filename: filename,
-			index:    0,
-			size:     len(data),
-		},
+		hash:     inHasher.Sum(),
+		filename: filename,
+		index:    0,
+		size:     len(data),
 		data:     data,
 		capacity: len(data),
 	}

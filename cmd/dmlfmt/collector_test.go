@@ -419,16 +419,7 @@ func TestCollector_RelativeSourceDefaultExclusions(t *testing.T) {
 		"sub/nested.dml",
 	})
 
-	origWd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("failed to get current working directory: %v", err)
-	}
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("failed to chdir to %s: %v", tmpDir, err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chdir(origWd)
-	})
+	t.Chdir(tmpDir)
 
 	cfg := &CLIConfig{
 		Include: DefaultIncludePattern,

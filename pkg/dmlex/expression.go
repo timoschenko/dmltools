@@ -442,7 +442,7 @@ func WrapExpression(ctx IExpressionContext) ISimplifiedExpr {
 			members[i] = oid.GetStart()
 			// Walk children to find the operator (DOT or ARROW) immediately preceding this objident.
 			// The children of the context are: [Expression] [op0] [Objident0] [op1] [Objident1] ...
-			for j := 0; j < c.GetChildCount(); j++ {
+			for j := range c.GetChildCount() {
 				if c.GetChild(j) == oid {
 					// The operator is the child immediately before this objident
 					if j > 0 {

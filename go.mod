@@ -1,6 +1,6 @@
 module github.com/timoschenko/dmltools
 
-go 1.23
+go 1.27
 
 require github.com/antlr4-go/antlr/v4 v4.13.1
 

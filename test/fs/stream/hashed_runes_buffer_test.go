@@ -405,13 +405,13 @@ func TestHashingFileStream_LA_LT_Consume(t *testing.T) {
 		t.Errorf("LA(0) = %d, want 0", sbuf.LA(0))
 	}
 	if sbuf.LT(1) != int('a') {
-		t.Errorf("LT(1) = %q, want 'a'", sbuf.LT(1))
+		t.Errorf("LT(1) = %v, want 'a'", sbuf.LT(1))
 	}
 	if sbuf.LA(1) != int('a') {
-		t.Errorf("LA(1) = %q, want 'a'", sbuf.LA(1))
+		t.Errorf("LA(1) = %v, want 'a'", sbuf.LA(1))
 	}
 	if sbuf.LA(2) != int('b') {
-		t.Errorf("LA(2) = %q, want 'b'", sbuf.LA(2))
+		t.Errorf("LA(2) = %v, want 'b'", sbuf.LA(2))
 	}
 	if sbuf.LA(3) != antlr.TokenEOF {
 		t.Errorf("LA(3) = %d, want TokenEOF (%d)", sbuf.LA(3), antlr.TokenEOF)
@@ -427,10 +427,10 @@ func TestHashingFileStream_LA_LT_Consume(t *testing.T) {
 		t.Errorf("Index() after Consume = %d, want 1", sbuf.Index())
 	}
 	if sbuf.LA(1) != int('b') {
-		t.Errorf("LA(1) = %q, want 'b'", sbuf.LA(1))
+		t.Errorf("LA(1) = %v, want 'b'", sbuf.LA(1))
 	}
 	if sbuf.LA(-1) != int('a') {
-		t.Errorf("LA(-1) = %q, want 'a'", sbuf.LA(-1))
+		t.Errorf("LA(-1) = %v, want 'a'", sbuf.LA(-1))
 	}
 
 	// Consume 'b'

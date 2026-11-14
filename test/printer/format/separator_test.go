@@ -83,7 +83,7 @@ func TestSeparator_JSON(t *testing.T) {
 	})
 
 	t.Run("UnmarshalNumbers", func(t *testing.T) {
-		for i := 0; i <= 5; i++ {
+		for i := range 6 {
 			b, _ := json.Marshal(i)
 			var s format.Separator
 			if err := json.Unmarshal(b, &s); err != nil {

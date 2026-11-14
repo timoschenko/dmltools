@@ -108,8 +108,7 @@ func (p *dmlParser) checkDmlVersion(localctx IDmlTagContext) {
 // UnimplementedVersion returns the unsupported version string if any error is EUNIMPL.
 func (l *ErrorListener) UnimplementedVersion() string {
 	for _, e := range l.Errors {
-		var verErr *UnimplementedVersionError
-		if errors.As(e.Err, &verErr) {
+		if verErr, ok := errors.AsType[*UnimplementedVersionError](e.Err); ok {
 			return verErr.Version
 		}
 	}

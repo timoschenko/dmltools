@@ -255,7 +255,7 @@ func TestParseUnion_Issue77(t *testing.T) {
 			if strings.Contains(tc.code, "union") {
 				tokens := file.Parser.GetTokenStream()
 				hasUnion := false
-				for i := 0; i < tokens.Size(); i++ {
+				for i := range tokens.Size() {
 					tok := tokens.Get(i)
 					if dmlex.GetTokenType(tok) == dmlex.TokenUnion {
 						hasUnion = true

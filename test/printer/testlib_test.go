@@ -165,9 +165,8 @@ func runPrinterTestCase(testSuite *testing.T, ptc *printerTestCase) {
 		}
 
 		if mask != nil && errors.Is(mask, ErrMaskSkip) {
-			var skipMask MaskedSkip
 			reason := mask.Error()
-			if errors.As(mask, &skipMask) {
+			if skipMask, ok := errors.AsType[MaskedSkip](mask); ok {
 				reason = skipMask.Reason()
 			}
 			if mask.Issue() > 0 {
