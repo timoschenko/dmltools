@@ -53,6 +53,19 @@ builds:
       - -X main.GitCommit={{.Commit}}
       - -X main.BuildDate={{.Date}}
 
+  - id: dmlsp-debug
+    dir: .
+    main: ./cmd/dmlsp
+    binary: dmlsp
+    targets:
+      - linux_amd64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -X main.Version={{.Version}}
+      - -X main.GitCommit={{.Commit}}
+      - -X main.BuildDate={{.Date}}
+
   - id: dml-web-format
     dir: .
     main: ./cmd/dml-web-format
@@ -88,6 +101,7 @@ archives:
     ids:
       - dmlfmt-debug
       - dmlast-debug
+      - dmlsp-debug
     formats:
       - tar.gz
     name_template: "dmltools-debug_{{ .Version }}_{{ .Os }}_{{ .Arch }}"

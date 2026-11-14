@@ -8,11 +8,11 @@ description: A workflow for scaffolding new DML printer features from grammar ru
 This skill outlines a systematic, scalable approach to adding new formatting structures to the `dmlint` printer package after a grammar update in `dml.g4`. It enforces test-driven development, strict mapping to ANTLR contexts, and proactive error suppression.
 
 ## 1. Plan & Research
-- **Analyze Grammar:** Inspect `pkg/dmlex/dml.g4` to identify the new rules to be implemented. Trace down dependencies and nested structures (e.g., initializers, statements, expressions).
+- **Analyze Grammar:** Inspect `grammar/dml/dml.g4` to identify the new rules to be implemented. Trace down dependencies and nested structures (e.g., initializers, statements, expressions).
   - User may provide some pseudo g4 code with annotation:
     - \n - means force wrap
     - \r - optional wrap
-  - Check potential optimization of the `pkg/dmlex/dml.g4` file (Group similar rules). Any changes to the file has to be appoved by user.
+  - Check potential optimization of the `grammar/dml/dml.g4` file (Group similar rules). Any changes to the file has to be appoved by user.
 - **Propose Implementation:** Draft a plan that clarifies any formatting ambiguity with the user. Specifically ask about:
   - Line wrapping strategies (e.g. keeping elements on a single line if they fit post-wrap).
   - Trailing comma or specific grammar symbol handling (e.g., `...`).
