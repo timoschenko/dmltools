@@ -77,9 +77,7 @@ func TestReport_ConcurrentIncrements(t *testing.T) {
 	incrementsPerGoroutine := 100
 
 	for range numGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range incrementsPerGoroutine {
 				r.IncrementReformatted()
 				r.IncrementUnchanged()
@@ -94,7 +92,7 @@ func TestReport_ConcurrentIncrements(t *testing.T) {
 				_ = r.IsEmpty()
 				_ = r.Render(false)
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

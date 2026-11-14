@@ -360,10 +360,8 @@ func runPipeline(
 
 	// Processing Pool (CPU bound, workers concurrency)
 	var processWg sync.WaitGroup
-	for i := 0; i < max(workers, 1); i++ {
-		processWg.Add(1)
-		go func() {
-			defer processWg.Done()
+	for range max(workers, 1) {
+		processWg.Go(func() {
 			for job := range processChan {
 				writeChan <- processFormattingJob(
 					job,
@@ -373,7 +371,7 @@ func runPipeline(
 					stats,
 				)
 			}
-		}()
+		})
 	}
 
 	go func() {

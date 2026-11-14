@@ -181,19 +181,19 @@ func TestHashedBuffer_LA_LookaheadAndLookback(t *testing.T) {
 
 		// Initial position: index 0
 		if got := buf.LA(1); got != int('h') {
-			t.Errorf("LA(1) = %q, want 'h'", got)
+			t.Errorf("LA(1) = %v, want 'h'", got)
 		}
 		if got := buf.LA(2); got != int('e') {
-			t.Errorf("LA(2) = %q, want 'e'", got)
+			t.Errorf("LA(2) = %v, want 'e'", got)
 		}
 		if got := buf.LA(3); got != int('l') {
-			t.Errorf("LA(3) = %q, want 'l'", got)
+			t.Errorf("LA(3) = %v, want 'l'", got)
 		}
 		if got := buf.LA(4); got != int('l') {
-			t.Errorf("LA(4) = %q, want 'l'", got)
+			t.Errorf("LA(4) = %v, want 'l'", got)
 		}
 		if got := buf.LA(5); got != int('o') {
-			t.Errorf("LA(5) = %q, want 'o'", got)
+			t.Errorf("LA(5) = %v, want 'o'", got)
 		}
 		if got := buf.LA(6); got != antlr.TokenEOF {
 			t.Errorf("LA(6) = %d, want TokenEOF", got)
@@ -210,13 +210,13 @@ func TestHashedBuffer_LA_LookaheadAndLookback(t *testing.T) {
 		// Consume 'h'
 		buf.Consume()
 		if got := buf.LA(-1); got != int('h') {
-			t.Errorf("LA(-1) after consume = %q, want 'h'", got)
+			t.Errorf("LA(-1) after consume = %v, want 'h'", got)
 		}
 		if got := buf.LA(1); got != int('e') {
-			t.Errorf("LA(1) after consume = %q, want 'e'", got)
+			t.Errorf("LA(1) after consume = %v, want 'e'", got)
 		}
 		if got := buf.LA(2); got != int('l') {
-			t.Errorf("LA(2) after consume = %q, want 'l'", got)
+			t.Errorf("LA(2) after consume = %v, want 'l'", got)
 		}
 
 		// Deep negative lookback (LA(-2)) should panic

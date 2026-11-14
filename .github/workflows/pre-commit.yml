@@ -7,18 +7,107 @@ on:
     branches: [master, main, trunk]
 
 jobs:
+  resolve-matrix:
+    name: Resolve Go Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve Go Versions
+        id: resolve
+        timeout-minutes: 2
+        run: |
+          python3 - << 'EOF'
+          import json
+          import os
+          import re
+          import sys
+          import urllib.request
+
+          def parse_version(v_str):
+              m = re.search(r'(\d+)\.(\d+)', v_str)
+              if not m:
+                  return (0, 0)
+              return (int(m.group(1)), int(m.group(2)))
+
+          output_file = os.environ.get("GITHUB_OUTPUT")
+
+          def set_matrix_output(matrix_dict):
+              json_str = json.dumps(matrix_dict)
+              print(f"Setting matrix output: {json_str}", file=sys.stderr)
+              if output_file:
+                  with open(output_file, "a", encoding="utf-8") as f:
+                      f.write(f"matrix={json_str}\n")
+              else:
+                  print(f"::set-output name=matrix::{json_str}")
+
+          default_matrix = {"go": ["go.mod"]}
+
+          # 1. Parse go.mod
+          mod_ver = (0, 0)
+          try:
+              with open("go.mod", "r", encoding="utf-8") as f:
+                  for line in f:
+                      line = line.strip()
+                      if line.startswith("go "):
+                          parts = line.split()
+                          if len(parts) >= 2:
+                              mod_ver = parse_version(parts[1])
+                              break
+          except Exception as e:
+              print(f"Warning: failed to read go.mod: {e}", file=sys.stderr)
+
+          if mod_ver == (0, 0):
+              set_matrix_output(default_matrix)
+              sys.exit(0)
+
+          # 2. Fetch go.dev releases
+          try:
+              req = urllib.request.Request(
+                  "https://go.dev/dl/?mode=json",
+                  headers={"User-Agent": "dmlint-ci-matrix-resolver"}
+              )
+              with urllib.request.urlopen(req, timeout=10) as resp:
+                  data = json.loads(resp.read().decode("utf-8"))
+          except Exception as e:
+              print(f"Warning: failed to fetch Go releases from go.dev: {e}", file=sys.stderr)
+              set_matrix_output(default_matrix)
+              sys.exit(0)
+
+          stables = [r for r in data if r.get("stable", False)]
+          if not stables:
+              set_matrix_output(default_matrix)
+              sys.exit(0)
+
+          stable_ver = parse_version(stables[0]["version"])
+          oldstable_ver = (0, 0)
+          for r in stables[1:]:
+              ver = parse_version(r["version"])
+              if ver < stable_ver:
+                  oldstable_ver = ver
+                  break
+
+          go_matrix = ["go.mod"]
+          if oldstable_ver > mod_ver:
+              go_matrix.append("oldstable")
+          if stable_ver > mod_ver and stable_ver != oldstable_ver:
+              go_matrix.append("stable")
+
+          set_matrix_output({"go": go_matrix})
+          EOF
+
   pre-commit:
     name: Build, Test & Pre-commit (${{ matrix.go }})
+    needs: resolve-matrix
     runs-on: ubuntu-latest
     env:
       CI: "true"
     strategy:
       fail-fast: false
-      matrix:
-        go:
-          - go.mod
-          - oldstable
-          - stable
+      matrix: ${{ fromJSON(needs.resolve-matrix.outputs.matrix) }}
 
     steps:
       - name: Checkout repository
@@ -58,6 +147,10 @@ jobs:
           GOTOOLCHAIN=auto go install golang.org/x/tools/cmd/stringer@latest
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
+      - name: Test Tools (make test-tools)
+        timeout-minutes: 3
+        run: make test-tools
+
       - name: Generate (make generate)
         timeout-minutes: 2
         run: make generate
@@ -74,16 +167,12 @@ jobs:
         timeout-minutes: 6
         run: make test-ndebug
 
-      - name: Test Tools (make test-tools)
-        timeout-minutes: 3
-        run: make test-tools
-
       # Run lint only for target version
       - name: Install golangci-lint
         if: matrix.go == 'go.mod'
         timeout-minutes: 5
         run: |
-          curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.11.2
+          curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.15.0
 
       - name: Install pre-commit
         if: matrix.go == 'go.mod'

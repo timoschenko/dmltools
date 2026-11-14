@@ -23,7 +23,7 @@ func runSwitchParserTestCase(t *testing.T, tc *switchParserTestCase) {
 	wrap := func(val string) string {
 		var sb strings.Builder
 		sb.WriteString("dml 1.4;\n\nmethod foo() {\n")
-		for _, line := range strings.Split(val, "\n") {
+		for line := range strings.SplitSeq(val, "\n") {
 			if line != "" {
 				sb.WriteString("    ")
 				sb.WriteString(line)

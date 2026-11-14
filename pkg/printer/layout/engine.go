@@ -244,10 +244,8 @@ func (e *Engine) SetTracer(tracer TokenTracer) {
 // Returns an error if the underlying writer fails during a flush.
 func (e *Engine) Push(token antlr.Token, flag format.FormatFlag) error {
 	bt := BufferedToken{
-		FlaggedToken: FlaggedToken{
-			Token: token,
-			Flag:  flag,
-		},
+		Token: token,
+		Flag:  flag,
 	}
 	if token != nil {
 		bt.cache = NewTokenStringCache(token.GetText())
@@ -379,12 +377,10 @@ func (e *Engine) beginGroup(
 
 	if mode == WrapModeCollective {
 		e.buffer = append(e.buffer, BufferedToken{
-			synthetic: SlcWrappingGroupBegin,
-			ResolveWrappingCache: ResolveWrappingCache{
-				ResolvedSepBefore: format.SepNone,
-				AssingedGroup:     nil,
-				CurrentGroup:      nil,
-			},
+			synthetic:         SlcWrappingGroupBegin,
+			ResolvedSepBefore: format.SepNone,
+			AssingedGroup:     nil,
+			CurrentGroup:      nil,
 		})
 	}
 	e.activeGroups = append(e.activeGroups, lg)
@@ -420,12 +416,10 @@ func (e *Engine) endGroup(expected *Group) {
 
 	if top.WrapMode == WrapModeCollective {
 		e.buffer = append(e.buffer, BufferedToken{
-			synthetic: SlcWrappingGroupEnd,
-			ResolveWrappingCache: ResolveWrappingCache{
-				ResolvedSepBefore: format.SepNone,
-				AssingedGroup:     nil,
-				CurrentGroup:      nil,
-			},
+			synthetic:         SlcWrappingGroupEnd,
+			ResolvedSepBefore: format.SepNone,
+			AssingedGroup:     nil,
+			CurrentGroup:      nil,
 		})
 	}
 

@@ -52,15 +52,11 @@ func NewHashedRunesBufferFromStream(
 	reader := bufio.NewReaderSize(teeStream, allocSize)
 
 	hfs := HashedRunesBuffer{
-		baseStreamHash: baseStreamHash{
-			hash: Hash{},
-		},
-		antlrStreamWrapper: antlrStreamWrapper{
-			filename: filename,
-			index:    0,
-			size:     0,
-		},
-		data: make([]rune, 0, allocSize),
+		hash:     Hash{},
+		filename: filename,
+		index:    0,
+		size:     0,
+		data:     make([]rune, 0, allocSize),
 	}
 
 	// Pre-build the buffer and read runes efficiently

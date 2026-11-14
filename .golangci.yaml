@@ -20,6 +20,7 @@ linters:
     - makezero
     - mirror
     - modernize
+    - intrange
     - prealloc
     - reassign
     - unconvert

@@ -502,7 +502,7 @@ func BenchmarkBufferInitialization_HashedRunesBuffer_1MB(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		r := strings.NewReader(payload)
 		buf, err := stream.NewHashedRunesBufferFromStream("bench.dml", r, size)
 		if err != nil {
@@ -518,7 +518,7 @@ func BenchmarkBufferInitialization_HashedBuffer_1MB(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		r := strings.NewReader(payload)
 		buf, err := stream.NewHashedBufferFromStream("bench.dml", r, size)
 		if err != nil {
@@ -534,7 +534,7 @@ func BenchmarkLexer_HashedRunesBuffer(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		r := strings.NewReader(payload)
 		buf, err := stream.NewHashedRunesBufferFromStream("bench.dml", r, size)
 		if err != nil {
@@ -556,7 +556,7 @@ func BenchmarkLexer_HashedBuffer(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		r := strings.NewReader(payload)
 		buf, err := stream.NewHashedBufferFromStream("bench.dml", r, size)
 		if err != nil {

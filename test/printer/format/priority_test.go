@@ -68,7 +68,7 @@ func TestPriority_JSON(t *testing.T) {
 	})
 
 	t.Run("UnmarshalNumbers", func(t *testing.T) {
-		for i := 0; i <= 15; i++ {
+		for i := range 16 {
 			b, _ := json.Marshal(i)
 			input := []byte(strings.TrimSpace(string(b)))
 			var p format.Priority
