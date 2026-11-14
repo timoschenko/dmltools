@@ -12,11 +12,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/timoschenko/dmltools/pkg/dmlex"
 	"github.com/timoschenko/dmltools/pkg/fs"
+	"github.com/timoschenko/dmltools/pkg/fs/lookup"
 	"github.com/timoschenko/dmltools/pkg/fs/stream"
 	"github.com/timoschenko/dmltools/pkg/printer"
 
@@ -324,20 +326,20 @@ func readInputJob(path string, stats StatsCollector) (InputJob, error) {
 // and parallel processing (-W workers).
 func runPipeline(
 	cfg *CLIConfig,
-	collector *FileCollector,
+	finder lookup.Finder,
 	ui *UI,
 	stats StatsCollector,
 ) int {
-	// TODO: AI Slop
-
 	if cfg.Verbose {
-		collector.SetOnIgnore(func(path string, isDir bool, filterName string) {
-			ui.IgnoredFilter(path, isDir, filterName)
+		finder.SetOnIgnore(func(path string, isDir bool, filterName string) {
+			if isDir || strings.HasSuffix(path, ".dml") {
+				ui.IgnoredFilter(path, isDir, filterName)
+			}
 		})
 	}
 
 	startTime := time.Now()
-	paths, err := collector.Collect(cfg.Sources)
+	paths, err := finder.Collect(cfg.Sources)
 	stats.RecordWalkIo(time.Since(startTime))
 	if err != nil {
 		ui.PrintError("Error: %v", err)

@@ -98,6 +98,7 @@ func TestGoDocCommand(t *testing.T) {
 	pkgs := []string{
 		"./pkg/dmlex",
 		"./pkg/fs",
+		"./pkg/fs/lookup",
 		"./pkg/fs/stream",
 		"./pkg/printer",
 		"./pkg/printer/dml_defaults",

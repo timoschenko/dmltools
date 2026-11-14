@@ -3840,4 +3840,100 @@ func TestVerboseMode(t *testing.T) {
 			)
 		}
 	})
+
+	t.Run("GitIgnoreAndIgnoreFile_Verbose", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		_ = os.Mkdir(filepath.Join(tmpDir, ".git"), 0750)
+		_ = os.WriteFile(
+			filepath.Join(tmpDir, ".gitignore"),
+			[]byte("git_skip.dml\ngit_ignored_dir/\nnotes.txt\n"),
+			0600,
+		)
+		_ = os.WriteFile(
+			filepath.Join(tmpDir, ".ignore"),
+			[]byte("dotignore_skip.dml\ndotignore_dir/\n"),
+			0600,
+		)
+
+		keepPath := filepath.Join(tmpDir, "keep.dml")
+		gitSkipPath := filepath.Join(tmpDir, "git_skip.dml")
+		gitDir := filepath.Join(tmpDir, "git_ignored_dir")
+		dotIgnoreSkipPath := filepath.Join(tmpDir, "dotignore_skip.dml")
+		dotIgnoreDir := filepath.Join(tmpDir, "dotignore_dir")
+		notesPath := filepath.Join(tmpDir, "notes.txt")
+
+		_ = os.Mkdir(gitDir, 0750)
+		_ = os.Mkdir(dotIgnoreDir, 0750)
+		_ = os.WriteFile(keepPath, []byte("dml 1.4;\ndevice keep;\n"), 0600)
+		_ = os.WriteFile(
+			gitSkipPath,
+			[]byte("dml 1.4;\ndevice gskip;\n"),
+			0600,
+		)
+		_ = os.WriteFile(
+			filepath.Join(gitDir, "inner.dml"),
+			[]byte("dml 1.4;\ndevice gdir;\n"),
+			0600,
+		)
+		_ = os.WriteFile(
+			dotIgnoreSkipPath,
+			[]byte("dml 1.4;\ndevice dskip;\n"),
+			0600,
+		)
+		_ = os.WriteFile(
+			filepath.Join(dotIgnoreDir, "inner.dml"),
+			[]byte("dml 1.4;\ndevice ddir;\n"),
+			0600,
+		)
+		_ = os.WriteFile(notesPath, []byte("ignored text"), 0600)
+
+		var stdout, stderr bytes.Buffer
+		args := []string{"-v", "--no-color", tmpDir}
+		code := run(args, &stdout, &stderr)
+		if code != ExitCodeOK {
+			t.Fatalf(
+				"expected ExitCodeOK (0), got %d (stderr: %s)",
+				code,
+				stderr.String(),
+			)
+		}
+
+		outStr := stdout.String()
+		expectedMsgs := []string{
+			fmt.Sprintf("Processing %s...\n", keepPath),
+			fmt.Sprintf(
+				"%s ignored: matches the .gitignore file content\n",
+				gitSkipPath,
+			),
+			fmt.Sprintf(
+				"%s directory ignored: matches the .gitignore file content\n",
+				gitDir,
+			),
+			fmt.Sprintf(
+				"%s ignored: matches the .ignore file content\n",
+				dotIgnoreSkipPath,
+			),
+			fmt.Sprintf(
+				"%s directory ignored: matches the .ignore file content\n",
+				dotIgnoreDir,
+			),
+			fmt.Sprintf("%s already well formatted, good job.\n", keepPath),
+		}
+		for _, want := range expectedMsgs {
+			if !strings.Contains(outStr, want) {
+				t.Errorf(
+					"expected stdout to contain %q, got:\n%s",
+					want,
+					outStr,
+				)
+			}
+		}
+
+		if strings.Contains(outStr, "notes.txt") {
+			t.Errorf(
+				"non-DML file notes.txt should not appear in verbose output, got:\n%s",
+				outStr,
+			)
+		}
+	})
 }

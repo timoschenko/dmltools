@@ -9,16 +9,42 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/timoschenko/dmltools/pkg/fs/lookup"
 )
+
+func newTestFinder(cfg *CLIConfig) (lookup.Finder, error) {
+	return newFinderFromConfig(cfg)
+}
 
 func createTestTree(t *testing.T, baseDir string, files []string) {
 	t.Helper()
+	withContent := make(map[string]string, len(files))
 	for _, f := range files {
+		withContent[f] = "content"
+	}
+	createTestTreeWithContent(t, baseDir, withContent)
+}
+
+func createTestTreeWithContent(
+	t *testing.T,
+	baseDir string,
+	files map[string]string,
+) {
+	t.Helper()
+	for f, content := range files {
+		if strings.HasSuffix(f, "/") {
+			dirPath := filepath.Join(baseDir, filepath.FromSlash(f))
+			if err := os.MkdirAll(dirPath, 0750); err != nil {
+				t.Fatalf("failed to create dir %s: %v", f, err)
+			}
+			continue
+		}
 		fullPath := filepath.Join(baseDir, filepath.FromSlash(f))
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0750); err != nil {
 			t.Fatalf("failed to create dir for %s: %v", f, err)
 		}
-		if err := os.WriteFile(fullPath, []byte("content"), 0600); err != nil {
+		if err := os.WriteFile(fullPath, []byte(content), 0600); err != nil {
 			t.Fatalf("failed to write file %s: %v", f, err)
 		}
 	}
@@ -40,12 +66,12 @@ func TestCollector_Defaults(t *testing.T) {
 		Include: DefaultIncludePattern,
 		Exclude: DefaultExcludePattern,
 	}
-	collector, err := NewFileCollector(cfg)
+	finder, err := newTestFinder(cfg)
 	if err != nil {
-		t.Fatalf("unexpected error creating collector: %v", err)
+		t.Fatalf("unexpected error creating finder: %v", err)
 	}
 
-	files, err := collector.Collect([]string{tmpDir})
+	files, err := finder.Collect([]string{tmpDir})
 	if err != nil {
 		t.Fatalf("unexpected collect error: %v", err)
 	}
@@ -74,12 +100,12 @@ func TestCollector_CustomInclude(t *testing.T) {
 		Include: `\.dml14$`,
 		Exclude: DefaultExcludePattern,
 	}
-	collector, err := NewFileCollector(cfg)
+	finder, err := newTestFinder(cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	files, err := collector.Collect([]string{tmpDir})
+	files, err := finder.Collect([]string{tmpDir})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -93,12 +119,12 @@ func TestCollector_CustomInclude(t *testing.T) {
 		Include: "",
 		Exclude: DefaultExcludePattern,
 	}
-	collectorEmpty, err := NewFileCollector(cfgEmpty)
+	finderEmpty, err := newTestFinder(cfgEmpty)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	filesEmpty, err := collectorEmpty.Collect([]string{tmpDir})
+	filesEmpty, err := finderEmpty.Collect([]string{tmpDir})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -124,12 +150,12 @@ func TestCollector_CustomExclude(t *testing.T) {
 		Include: DefaultIncludePattern,
 		Exclude: `/skip/`,
 	}
-	collector, err := NewFileCollector(cfg)
+	finder, err := newTestFinder(cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	files, err := collector.Collect([]string{tmpDir})
+	files, err := finder.Collect([]string{tmpDir})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -159,12 +185,12 @@ func TestCollector_ExtendExclude(t *testing.T) {
 		Exclude:       DefaultExcludePattern,
 		ExtendExclude: `/custom/`,
 	}
-	collector, err := NewFileCollector(cfg)
+	finder, err := newTestFinder(cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	files, err := collector.Collect([]string{tmpDir})
+	files, err := finder.Collect([]string{tmpDir})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -190,13 +216,13 @@ func TestCollector_ForceExclude(t *testing.T) {
 		Exclude:      DefaultExcludePattern,
 		ForceExclude: `(skip_gen|_ignored)`,
 	}
-	collector, err := NewFileCollector(cfg)
+	finder, err := newTestFinder(cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	// Test 1: Recursive directory search
-	files, err := collector.Collect([]string{tmpDir})
+	files, err := finder.Collect([]string{tmpDir})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -212,7 +238,7 @@ func TestCollector_ForceExclude(t *testing.T) {
 	// Test 2: Explicitly passed files (force-exclude skips even explicit files)
 	keepFile := filepath.Join(tmpDir, "keep.dml")
 	skipFile := filepath.Join(tmpDir, "skip_gen.dml")
-	explicitFiles, err := collector.Collect([]string{keepFile, skipFile})
+	explicitFiles, err := finder.Collect([]string{keepFile, skipFile})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -232,13 +258,13 @@ func TestCollector_ExplicitFilesBypassExcludeAndInclude(t *testing.T) {
 		Include: DefaultIncludePattern,
 		Exclude: DefaultExcludePattern,
 	}
-	collector, err := NewFileCollector(cfg)
+	finder, err := newTestFinder(cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	target := filepath.Join(tmpDir, "venv", "test.txt")
-	files, err := collector.Collect([]string{target})
+	files, err := finder.Collect([]string{target})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -263,7 +289,7 @@ func TestCollector_DeduplicationAndSorting(t *testing.T) {
 		Include: DefaultIncludePattern,
 		Exclude: DefaultExcludePattern,
 	}
-	collector, err := NewFileCollector(cfg)
+	finder, err := newTestFinder(cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -272,7 +298,7 @@ func TestCollector_DeduplicationAndSorting(t *testing.T) {
 	fileB := filepath.Join(tmpDir, "b.dml")
 
 	// Pass redundant directory and explicit files out of order
-	files, err := collector.Collect([]string{fileB, tmpDir, fileA})
+	files, err := finder.Collect([]string{fileB, tmpDir, fileA})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -296,7 +322,7 @@ func TestCollector_InvalidRegex(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := NewFileCollector(tc.cfg)
+			_, err := newTestFinder(tc.cfg)
 			if err == nil {
 				t.Fatalf("expected error for %s, got nil", tc.name)
 			}
@@ -315,13 +341,13 @@ func TestCollector_NonExistentPath(t *testing.T) {
 		Include: DefaultIncludePattern,
 		Exclude: DefaultExcludePattern,
 	}
-	collector, err := NewFileCollector(cfg)
+	finder, err := newTestFinder(cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	missing := filepath.Join(t.TempDir(), "does_not_exist.dml")
-	_, err = collector.Collect([]string{missing})
+	_, err = finder.Collect([]string{missing})
 	if err == nil {
 		t.Fatalf("expected error for non-existent path, got nil")
 	}
@@ -334,21 +360,21 @@ func TestCollector_IsForceExcluded(t *testing.T) {
 	cfg := &CLIConfig{
 		ForceExclude: `generated/.*\.dml$`,
 	}
-	collector, err := NewFileCollector(cfg)
+	finder, err := newTestFinder(cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !collector.IsForceExcluded("path/to/generated/foo.dml") {
+	if !finder.Filter().IsForceExcluded("path/to/generated/foo.dml") {
 		t.Errorf("expected path to be force-excluded")
 	}
-	if collector.IsForceExcluded("path/to/normal/foo.dml") {
+	if finder.Filter().IsForceExcluded("path/to/normal/foo.dml") {
 		t.Errorf("expected normal path not to be force-excluded")
 	}
 
 	// When force-exclude is not set
-	nilCollector, _ := NewFileCollector(&CLIConfig{})
-	if nilCollector.IsForceExcluded("any/file.dml") {
+	nilFinder, _ := newTestFinder(&CLIConfig{})
+	if nilFinder.Filter().IsForceExcluded("any/file.dml") {
 		t.Errorf("expected false when force-exclude is not set")
 	}
 }
@@ -367,12 +393,12 @@ func TestCollector_AnchoredIncludeAndExclude(t *testing.T) {
 		Include: `^src/.*`,
 		Exclude: DefaultExcludePattern,
 	}
-	collectorInc, err := NewFileCollector(cfgInclude)
+	finderInc, err := newTestFinder(cfgInclude)
 	if err != nil {
-		t.Fatalf("unexpected error creating collector: %v", err)
+		t.Fatalf("unexpected error creating finder: %v", err)
 	}
 
-	filesInc, err := collectorInc.Collect([]string{tmpDir})
+	filesInc, err := finderInc.Collect([]string{tmpDir})
 	if err != nil {
 		t.Fatalf("unexpected collect error: %v", err)
 	}
@@ -390,12 +416,12 @@ func TestCollector_AnchoredIncludeAndExclude(t *testing.T) {
 		Include: DefaultIncludePattern,
 		Exclude: `^test/`,
 	}
-	collectorExc, err := NewFileCollector(cfgExclude)
+	finderExc, err := newTestFinder(cfgExclude)
 	if err != nil {
-		t.Fatalf("unexpected error creating collector: %v", err)
+		t.Fatalf("unexpected error creating finder: %v", err)
 	}
 
-	filesExc, err := collectorExc.Collect([]string{tmpDir})
+	filesExc, err := finderExc.Collect([]string{tmpDir})
 	if err != nil {
 		t.Fatalf("unexpected collect error: %v", err)
 	}
@@ -425,12 +451,12 @@ func TestCollector_RelativeSourceDefaultExclusions(t *testing.T) {
 		Include: DefaultIncludePattern,
 		Exclude: DefaultExcludePattern,
 	}
-	collector, err := NewFileCollector(cfg)
+	finder, err := newTestFinder(cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	files, err := collector.Collect([]string{"."})
+	files, err := finder.Collect([]string{"."})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -442,5 +468,432 @@ func TestCollector_RelativeSourceDefaultExclusions(t *testing.T) {
 	slices.Sort(expected)
 	if !slices.Equal(files, expected) {
 		t.Fatalf("expected %v, got %v", expected, files)
+	}
+}
+
+func TestCollector_GitIgnore_Basic(t *testing.T) {
+	tmpDir := t.TempDir()
+	createTestTreeWithContent(t, tmpDir, map[string]string{
+		".git/": "",
+		".gitignore": strings.Join([]string{
+			"# comment should be ignored",
+			"exact_skip.dml",
+			"*_gen.dml",
+			"**/*.bak.dml",
+			"ignored_dir/",
+			"/root_only.dml",
+		}, "\n") + "\n",
+		"keep.dml":                   "content",
+		"exact_skip.dml":             "content",
+		"dev_gen.dml":                "content",
+		"top.bak.dml":                "content",
+		"root_only.dml":              "content",
+		"sub/keep_sub.dml":           "content",
+		"sub/nested_gen.dml":         "content",
+		"sub/deep/inner.bak.dml":     "content",
+		"sub/root_only.dml":          "content",
+		"ignored_dir/skipped.dml":    "content",
+		"sub/ignored_dir/nested.dml": "content",
+	})
+
+	cfg := &CLIConfig{
+		Include: DefaultIncludePattern,
+		Exclude: DefaultExcludePattern,
+	}
+	finder, err := newTestFinder(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	files, err := finder.Collect([]string{tmpDir})
+	if err != nil {
+		t.Fatalf("unexpected collect error: %v", err)
+	}
+
+	expected := []string{
+		filepath.Join(tmpDir, "keep.dml"),
+		filepath.Join(tmpDir, "sub", "keep_sub.dml"),
+		filepath.Join(tmpDir, "sub", "root_only.dml"),
+	}
+	slices.Sort(expected)
+	if !slices.Equal(files, expected) {
+		t.Fatalf("expected %v, got %v", expected, files)
+	}
+}
+
+func TestCollector_IgnoreFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	createTestTreeWithContent(t, tmpDir, map[string]string{
+		".git/": "",
+		".gitignore": strings.Join([]string{
+			"*.gen.dml",
+			"override_dir/",
+		}, "\n") + "\n",
+		".ignore": strings.Join([]string{
+			"ignore_only.dml",
+			"temp_ignore_dir/",
+			"!keep.gen.dml",
+			"!override_dir/",
+		}, "\n") + "\n",
+		"normal.dml":               "content",
+		"ignore_only.dml":          "content",
+		"skip.gen.dml":             "content",
+		"keep.gen.dml":             "content",
+		"temp_ignore_dir/a.dml":    "content",
+		"override_dir/rescued.dml": "content",
+	})
+
+	cfg := &CLIConfig{
+		Include: DefaultIncludePattern,
+		Exclude: DefaultExcludePattern,
+	}
+	finder, err := newTestFinder(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	files, err := finder.Collect([]string{tmpDir})
+	if err != nil {
+		t.Fatalf("unexpected collect error: %v", err)
+	}
+
+	expected := []string{
+		filepath.Join(tmpDir, "keep.gen.dml"),
+		filepath.Join(tmpDir, "normal.dml"),
+		filepath.Join(tmpDir, "override_dir", "rescued.dml"),
+	}
+	slices.Sort(expected)
+	if !slices.Equal(files, expected) {
+		t.Fatalf("expected %v, got %v", expected, files)
+	}
+}
+
+func TestCollector_NestedGitIgnore_AndNegation(t *testing.T) {
+	tmpDir := t.TempDir()
+	createTestTreeWithContent(t, tmpDir, map[string]string{
+		".git/":      "",
+		".gitignore": "parent_skip_*.dml\n",
+		"sub/.gitignore": strings.Join([]string{
+			"/local_only.dml",
+			"!parent_skip_kept.dml",
+		}, "\n") + "\n",
+		"sub/.ignore": strings.Join([]string{
+			"sub_ignored.dml",
+			"nested_glob/**",
+			"!nested_glob/allow.dml",
+		}, "\n") + "\n",
+		"local_only.dml":            "content",
+		"parent_skip_root.dml":      "content",
+		"sub/ok.dml":                "content",
+		"sub/local_only.dml":        "content",
+		"sub/parent_skip_drop.dml":  "content",
+		"sub/parent_skip_kept.dml":  "content",
+		"sub/sub_ignored.dml":       "content",
+		"sub/deep/local_only.dml":   "content",
+		"sub/nested_glob/skip.dml":  "content",
+		"sub/nested_glob/allow.dml": "content",
+		"sub/nested_glob/dir/x.dml": "content",
+	})
+
+	cfg := &CLIConfig{
+		Include: DefaultIncludePattern,
+		Exclude: DefaultExcludePattern,
+	}
+	finder, err := newTestFinder(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	files, err := finder.Collect([]string{tmpDir})
+	if err != nil {
+		t.Fatalf("unexpected collect error: %v", err)
+	}
+
+	expected := []string{
+		filepath.Join(tmpDir, "local_only.dml"),
+		filepath.Join(tmpDir, "sub", "deep", "local_only.dml"),
+		filepath.Join(tmpDir, "sub", "nested_glob", "allow.dml"),
+		filepath.Join(tmpDir, "sub", "ok.dml"),
+		filepath.Join(tmpDir, "sub", "parent_skip_kept.dml"),
+	}
+	slices.Sort(expected)
+	if !slices.Equal(files, expected) {
+		t.Fatalf("expected %v, got %v", expected, files)
+	}
+}
+
+func TestCollector_GitIgnore_OverriddenByCustomExclude(t *testing.T) {
+	tmpDir := t.TempDir()
+	createTestTreeWithContent(t, tmpDir, map[string]string{
+		".git/":           "",
+		".gitignore":      "git_skip.dml\n",
+		".ignore":         "ignore_skip.dml\n",
+		"keep.dml":        "content",
+		"git_skip.dml":    "content",
+		"ignore_skip.dml": "content",
+		"custom/skip.dml": "content",
+		"venv/lib.dml":    "content",
+	})
+
+	t.Run("custom exclude value disables ignore files", func(t *testing.T) {
+		cfg := &CLIConfig{
+			Include: DefaultIncludePattern,
+			Exclude: `/(\.git|custom)/`,
+		}
+		finder, err := newTestFinder(cfg)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		files, err := finder.Collect([]string{tmpDir})
+		if err != nil {
+			t.Fatalf("unexpected collect error: %v", err)
+		}
+
+		expected := []string{
+			filepath.Join(tmpDir, "git_skip.dml"),
+			filepath.Join(tmpDir, "ignore_skip.dml"),
+			filepath.Join(tmpDir, "keep.dml"),
+			filepath.Join(tmpDir, "venv", "lib.dml"),
+		}
+		slices.Sort(expected)
+		if !slices.Equal(files, expected) {
+			t.Fatalf("expected %v, got %v", expected, files)
+		}
+	})
+
+	t.Run(
+		"explicit default exclude flag disables ignore files",
+		func(t *testing.T) {
+			cfg := &CLIConfig{
+				Include:       DefaultIncludePattern,
+				Exclude:       DefaultExcludePattern,
+				ExplicitFlags: []string{"exclude"},
+			}
+			finder, err := newTestFinder(cfg)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			files, err := finder.Collect([]string{tmpDir})
+			if err != nil {
+				t.Fatalf("unexpected collect error: %v", err)
+			}
+
+			expected := []string{
+				filepath.Join(tmpDir, "custom", "skip.dml"),
+				filepath.Join(tmpDir, "git_skip.dml"),
+				filepath.Join(tmpDir, "ignore_skip.dml"),
+				filepath.Join(tmpDir, "keep.dml"),
+			}
+			slices.Sort(expected)
+			if !slices.Equal(files, expected) {
+				t.Fatalf("expected %v, got %v", expected, files)
+			}
+		},
+	)
+
+	t.Run("empty exclude disables ignore files", func(t *testing.T) {
+		cfg := &CLIConfig{
+			Include: DefaultIncludePattern,
+			Exclude: "",
+		}
+		finder, err := newTestFinder(cfg)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		files, err := finder.Collect([]string{tmpDir})
+		if err != nil {
+			t.Fatalf("unexpected collect error: %v", err)
+		}
+
+		expected := []string{
+			filepath.Join(tmpDir, "custom", "skip.dml"),
+			filepath.Join(tmpDir, "git_skip.dml"),
+			filepath.Join(tmpDir, "ignore_skip.dml"),
+			filepath.Join(tmpDir, "keep.dml"),
+			filepath.Join(tmpDir, "venv", "lib.dml"),
+		}
+		slices.Sort(expected)
+		if !slices.Equal(files, expected) {
+			t.Fatalf("expected %v, got %v", expected, files)
+		}
+	})
+}
+
+func TestCollector_GitIgnore_CombinedWithExtendAndForceExclude(t *testing.T) {
+	tmpDir := t.TempDir()
+	createTestTreeWithContent(t, tmpDir, map[string]string{
+		".git/":              "",
+		".gitignore":         "git_skip.dml\n",
+		".ignore":            "ignore_skip.dml\n",
+		"keep.dml":           "content",
+		"git_skip.dml":       "content",
+		"ignore_skip.dml":    "content",
+		"forced_git.dml":     "content",
+		"extra_dir/skip.dml": "content",
+		"venv/lib.dml":       "content",
+	})
+
+	cfg := &CLIConfig{
+		Include:       DefaultIncludePattern,
+		Exclude:       DefaultExcludePattern,
+		ExtendExclude: `/extra_dir/`,
+		ForceExclude:  `forced_git\.dml$`,
+	}
+	finder, err := newTestFinder(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Recursive collection honors default excludes, --extend-exclude, --force-exclude,
+	// .gitignore, and .ignore.
+	files, err := finder.Collect([]string{tmpDir})
+	if err != nil {
+		t.Fatalf("unexpected collect error: %v", err)
+	}
+	expected := []string{
+		filepath.Join(tmpDir, "keep.dml"),
+	}
+	if !slices.Equal(files, expected) {
+		t.Fatalf("recursive collect expected %v, got %v", expected, files)
+	}
+
+	// Explicit file arguments bypass .gitignore/.ignore unless matched by --force-exclude.
+	gitSkipFile := filepath.Join(tmpDir, "git_skip.dml")
+	ignoreSkipFile := filepath.Join(tmpDir, "ignore_skip.dml")
+	forcedFile := filepath.Join(tmpDir, "forced_git.dml")
+	explicitFiles, err := finder.Collect([]string{
+		gitSkipFile,
+		ignoreSkipFile,
+		forcedFile,
+	})
+	if err != nil {
+		t.Fatalf("explicit collect error: %v", err)
+	}
+	expectedExplicit := []string{gitSkipFile, ignoreSkipFile}
+	slices.Sort(expectedExplicit)
+	if !slices.Equal(explicitFiles, expectedExplicit) {
+		t.Fatalf(
+			"explicit collect expected %v, got %v",
+			expectedExplicit,
+			explicitFiles,
+		)
+	}
+}
+
+func TestCollector_GitIgnore_VCSBoundary(t *testing.T) {
+	tmpDir := t.TempDir()
+	outerDir := filepath.Join(tmpDir, "outer")
+	repoDir := filepath.Join(outerDir, "repo")
+
+	createTestTreeWithContent(t, outerDir, map[string]string{
+		".gitignore":              "outer_ignored.dml\n",
+		".ignore":                 "outer_dir/\n",
+		"repo/.git/":              "",
+		"repo/.gitignore":         "repo_ignored.dml\n",
+		"repo/main.dml":           "content",
+		"repo/outer_ignored.dml":  "content",
+		"repo/outer_dir/keep.dml": "content",
+		"repo/repo_ignored.dml":   "content",
+	})
+
+	cfg := &CLIConfig{
+		Include: DefaultIncludePattern,
+		Exclude: DefaultExcludePattern,
+	}
+	finder, err := newTestFinder(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	files, err := finder.Collect([]string{repoDir})
+	if err != nil {
+		t.Fatalf("unexpected collect error: %v", err)
+	}
+
+	expected := []string{
+		filepath.Join(repoDir, "main.dml"),
+		filepath.Join(repoDir, "outer_dir", "keep.dml"),
+		filepath.Join(repoDir, "outer_ignored.dml"),
+	}
+	slices.Sort(expected)
+	if !slices.Equal(files, expected) {
+		t.Fatalf("expected %v, got %v", expected, files)
+	}
+}
+
+func TestCollector_GitIgnore_OnIgnoreCallback(t *testing.T) {
+	tmpDir := t.TempDir()
+	createTestTreeWithContent(t, tmpDir, map[string]string{
+		".git/":               "",
+		".gitignore":          "git_skip.dml\ngit_dir/\n",
+		".ignore":             "dotignore_skip.dml\ndotignore_dir/\n",
+		"keep.dml":            "content",
+		"git_skip.dml":        "content",
+		"git_dir/a.dml":       "content",
+		"dotignore_skip.dml":  "content",
+		"dotignore_dir/b.dml": "content",
+	})
+
+	cfg := &CLIConfig{
+		Include: DefaultIncludePattern,
+		Exclude: DefaultExcludePattern,
+	}
+	finder, err := newTestFinder(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	type ignoreEvent struct {
+		path   string
+		isDir  bool
+		filter string
+	}
+	var events []ignoreEvent
+	finder.SetOnIgnore(func(path string, isDir bool, filterName string) {
+		events = append(events, ignoreEvent{
+			path:   path,
+			isDir:  isDir,
+			filter: filterName,
+		})
+	})
+
+	files, err := finder.Collect([]string{tmpDir})
+	if err != nil {
+		t.Fatalf("unexpected collect error: %v", err)
+	}
+	expectedFiles := []string{filepath.Join(tmpDir, "keep.dml")}
+	if !slices.Equal(files, expectedFiles) {
+		t.Fatalf("expected %v, got %v", expectedFiles, files)
+	}
+
+	wantEvents := []ignoreEvent{
+		{
+			path:   filepath.Join(tmpDir, "git_skip.dml"),
+			isDir:  false,
+			filter: lookup.FileGitIgnore,
+		},
+		{
+			path:   filepath.Join(tmpDir, "git_dir"),
+			isDir:  true,
+			filter: lookup.FileGitIgnore,
+		},
+		{
+			path:   filepath.Join(tmpDir, "dotignore_skip.dml"),
+			isDir:  false,
+			filter: lookup.FileIgnore,
+		},
+		{
+			path:   filepath.Join(tmpDir, "dotignore_dir"),
+			isDir:  true,
+			filter: lookup.FileIgnore,
+		},
+	}
+	for _, want := range wantEvents {
+		if !slices.Contains(events, want) {
+			t.Errorf("missing ignore event %+v in %+v", want, events)
+		}
 	}
 }

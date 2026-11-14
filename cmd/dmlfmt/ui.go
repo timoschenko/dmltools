@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/timoschenko/dmltools/pkg/dmlex"
+	"github.com/timoschenko/dmltools/pkg/fs/lookup"
 )
 
 // ANSI color escape codes
@@ -291,17 +292,23 @@ func (u *UI) Processing(path string) {
 
 // IgnoredFilter writes a filtered-out file or directory notice to stdout.
 func (u *UI) IgnoredFilter(path string, isDir bool, filterName string) {
+	reason := "regular expression"
+	if filterName == lookup.FileGitIgnore || filterName == lookup.FileIgnore {
+		reason = "file content"
+	}
 	if isDir {
 		u.Verbose(
-			"%s directory ignored: matches the %s regular expression\n",
+			"%s directory ignored: matches the %s %s\n",
 			path,
 			filterName,
+			reason,
 		)
 	} else {
 		u.Verbose(
-			"%s ignored: matches the %s regular expression\n",
+			"%s ignored: matches the %s %s\n",
 			path,
 			filterName,
+			reason,
 		)
 	}
 }

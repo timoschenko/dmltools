@@ -15,6 +15,7 @@ import (
 	"slices"
 
 	"github.com/timoschenko/dmltools/pkg/dmlex"
+	"github.com/timoschenko/dmltools/pkg/fs/lookup"
 	"github.com/timoschenko/dmltools/pkg/fs/stream"
 	"github.com/timoschenko/dmltools/pkg/printer"
 
@@ -141,7 +142,7 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		)
 	}
 
-	collector, err := NewFileCollector(cfg)
+	finder, err := newFinderFromConfig(cfg)
 	if err != nil {
 		ui.PrintError("Error: %v", err)
 		return ExitCodeInternalError
@@ -149,7 +150,7 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	if len(cfg.Sources) == 1 && cfg.Sources[0] == "-" {
 		if cfg.StdinFilename != "" &&
-			collector.IsForceExcluded(cfg.StdinFilename) {
+			finder.Filter().IsForceExcluded(cfg.StdinFilename) {
 			if !cfg.Check {
 				if stdin == nil {
 					stdin = os.Stdin
@@ -174,7 +175,24 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return ExitCodeInternalError
 	}
 
-	return runPipeline(cfg, collector, ui, stats)
+	return runPipeline(cfg, finder, ui, stats)
+}
+
+func newFinderFromConfig(cfg *CLIConfig) (lookup.Finder, error) {
+	opts := []lookup.Option{
+		lookup.WithInclude(cfg.Include),
+		lookup.WithExclude(cfg.Exclude),
+		lookup.WithExtendExclude(cfg.ExtendExclude),
+		lookup.WithForceExclude(cfg.ForceExclude),
+	}
+	if !slices.Contains(cfg.ExplicitFlags, "exclude") &&
+		cfg.Exclude == DefaultExcludePattern {
+		opts = append(
+			opts,
+			lookup.WithIgnoreFiles(lookup.FileGitIgnore, lookup.FileIgnore),
+		)
+	}
+	return lookup.NewFinder(opts...)
 }
 
 func formatCode(
