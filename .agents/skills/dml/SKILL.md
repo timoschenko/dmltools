@@ -3,7 +3,7 @@ name: dml
 description: >-
   Reference and guide for understanding Device Modeling Language (DML 1.4 & 1.2) syntax,
   formal grammar, object model, templates, and standard library specifications. Use whenever
-  analyzing, writing, parsing, or formatting DML code, modifying pkg/dmlex/dml.g4, or implementing
+  analyzing, writing, parsing, or formatting DML code, modifying grammar/dml/dml.g4, or implementing
   AST and printer features in dmlint.
 ---
 

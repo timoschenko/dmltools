@@ -16,6 +16,9 @@ import (
 	"github.com/timoschenko/dmltools/pkg/dmlex"
 )
 
+const previewWarning = "WARNING: dmlast is a preview tool; " +
+	"features and behavior may change without notice."
+
 var (
 	Version   = "dev"
 	GitCommit = "none"
@@ -144,56 +147,87 @@ func printVersion(w io.Writer) {
 		w,
 		"There is NO WARRANTY, to the extent permitted by law.",
 	)
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, previewWarning)
 }
 
-func main() {
-	filePathPtr := flag.String("file", "", "The path to the DML file to parse.")
-	versionPtr := flag.Bool("version", false, "Show the version and exit.")
-	vPtr := flag.Bool("v", false, "Show the version and exit.")
-	VPtr := flag.Bool("V", false, "Show the version and exit.")
-	flag.Parse() // Parse the command-line arguments
+func printUsage(out io.Writer, fs *flag.FlagSet) {
+	_, _ = fmt.Fprintf(out, "Usage: dmlast -file <path-to-dml-file>\n\n")
+	_, _ = fmt.Fprintf(out, "%s\n\n", previewWarning)
+	_, _ = fmt.Fprintf(out, "Options:\n")
+	fs.SetOutput(out)
+	fs.PrintDefaults()
+}
 
-	if *versionPtr || *vPtr || *VPtr {
-		printVersion(os.Stdout)
-		return
+func run(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("dmlast", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+
+	var filePath string
+	var showVersion bool
+	var showHelp bool
+
+	fs.StringVar(&filePath, "file", "", "The path to the DML file to parse.")
+	fs.BoolVar(&showVersion, "version", false, "Show the version and exit.")
+	fs.BoolVar(&showVersion, "v", false, "Show the version and exit.")
+	fs.BoolVar(&showVersion, "V", false, "Show the version and exit.")
+	fs.BoolVar(&showHelp, "help", false, "Show help usage and exit.")
+	fs.BoolVar(&showHelp, "h", false, "Show help usage and exit.")
+	fs.Usage = func() {
+		printUsage(stderr, fs)
 	}
 
-	// Check if the file path was provided
-	if *filePathPtr == "" {
-		fmt.Fprintf(os.Stderr, "Error: No file path provided.\n")
-		fmt.Fprintf(
-			os.Stderr,
-			"Usage: %s -file <path-to-dml-file>\n",
-			os.Args[0],
-		)
-		os.Exit(1)
+	if err := fs.Parse(args); err != nil {
+		return 2
 	}
 
-	filename := *filePathPtr
-	errorListener := dmlex.NewErrorListener(filename, 0)
+	if showHelp {
+		printUsage(stdout, fs)
+		return 0
+	}
+
+	if showVersion {
+		printVersion(stdout)
+		return 0
+	}
+
+	if filePath == "" {
+		_, _ = fmt.Fprintf(stderr, "Error: No file path provided.\n")
+		printUsage(stderr, fs)
+		return 1
+	}
+
+	_, _ = fmt.Fprintln(stderr, previewWarning)
+
+	errorListener := dmlex.NewErrorListener(filePath, 0)
 	errorListener.Handler = func(e dmlex.SyntaxErrorInfo) {
-		fmt.Fprintf(
-			os.Stderr,
+		_, _ = fmt.Fprintf(
+			stderr,
 			"ERROR %s:%d column %d: Syntax error - %s\n",
-			filename, e.Line, e.Column, e.Msg,
+			filePath, e.Line, e.Column, e.Msg,
 		)
 	}
-	file, err := dmlex.ParseFile(filename, errorListener)
+	file, err := dmlex.ParseFile(filePath, errorListener)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading file %s: %v\n", filename, err)
-		os.Exit(1)
+		_, _ = fmt.Fprintf(
+			stderr,
+			"Error reading file %s: %v\n",
+			filePath,
+			err,
+		)
+		return 1
 	}
 
 	p := file.Parser // alias
 	tree := p.Dml()
 
 	if errorCount := len(errorListener.Errors); errorCount > 0 {
-		fmt.Fprintf(
-			os.Stderr,
+		_, _ = fmt.Fprintf(
+			stderr,
 			"Parsing failed with %d syntax error(s).\n",
 			errorCount,
 		)
-		os.Exit(1)
+		return 1
 	}
 
 	jsonTree := buildJsonTree(tree, p.GetRuleNames(), p.GetSymbolicNames())
@@ -201,13 +235,19 @@ func main() {
 	// Marshal to JSON with pretty-printing
 	jsonData, err := json.MarshalIndent(jsonTree, "", "  ")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error serializing tree to JSON: %v\n", err)
-		os.Exit(1)
+		_, _ = fmt.Fprintf(stderr, "Error serializing tree to JSON: %v\n", err)
+		return 1
 	}
 
 	// Write to standard output
-	if _, err := fmt.Println(string(jsonData)); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing JSON to stdout: %v\n", err)
-		os.Exit(1)
+	if _, err := fmt.Fprintln(stdout, string(jsonData)); err != nil {
+		_, _ = fmt.Fprintf(stderr, "Error writing JSON to stdout: %v\n", err)
+		return 1
 	}
+
+	return 0
+}
+
+func main() {
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }

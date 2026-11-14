@@ -6,7 +6,6 @@ package main
 import (
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -31,11 +30,7 @@ var dmlcValueFlags = map[string]bool{
 }
 
 // ImportRef describes an import statement location and target string.
-type ImportRef struct {
-	Name   string
-	Line   int
-	Column int
-}
+type ImportRef = dmlex.ImportRef
 
 func nextDmlcArg(
 	tail []string,
@@ -114,102 +109,7 @@ func parseDmlcFlags(args []string) ([]string, string) {
 func extractDmlFileMeta(
 	tree antlr.ParseTree,
 ) (bool, int, int, []ImportRef) {
-	dmlCtx, ok := tree.(dmlex.IDmlContext)
-	if !ok || dmlCtx == nil {
-		return false, 0, 0, nil
-	}
-
-	codeCtx := dmlCtx.DmlCode()
-	if codeCtx == nil {
-		return false, 0, 0, nil
-	}
-
-	var (
-		hasDevice bool
-		devLine   int
-		devCol    int
-	)
-	if devTag := codeCtx.DeviceTag(); devTag != nil {
-		hasDevice = true
-		if tok := devTag.GetStart(); tok != nil {
-			devLine = tok.GetLine()
-			devCol = tok.GetColumn()
-		}
-	}
-
-	var imports []ImportRef
-	collectImportsFromStatements(codeCtx.DeviceStatements(), &imports)
-
-	return hasDevice, devLine, devCol, imports
-}
-
-func collectImportsFromStatements(
-	stmts dmlex.IDeviceStatementsContext,
-	out *[]ImportRef,
-) {
-	if stmts == nil {
-		return
-	}
-	for _, stmt := range stmts.AllDeviceStatement() {
-		if stmt == nil {
-			continue
-		}
-		if imp := stmt.ImportStatement(); imp != nil {
-			if ref, ok := extractImportRef(imp); ok {
-				*out = append(*out, ref)
-			}
-		}
-		if ifCtx := stmt.ToplevelIf(); ifCtx != nil {
-			collectImportsFromToplevelIf(ifCtx, out)
-		}
-	}
-}
-
-func collectImportsFromToplevelIf(
-	ifCtx dmlex.IToplevelIfContext,
-	out *[]ImportRef,
-) {
-	if ifCtx == nil {
-		return
-	}
-	if ifStmt := ifCtx.ToplevelIfStatement(); ifStmt != nil {
-		collectImportsFromStatements(ifStmt.DeviceStatements(), out)
-	}
-	if elseStmt := ifCtx.ToplevelElseStatement(); elseStmt != nil {
-		collectImportsFromStatements(elseStmt.DeviceStatements(), out)
-		collectImportsFromToplevelIf(elseStmt.ToplevelIf(), out)
-	}
-}
-
-func extractImportRef(imp dmlex.IImportStatementContext) (ImportRef, bool) {
-	lit := imp.STRING_LITERAL()
-	if lit == nil {
-		return ImportRef{}, false
-	}
-	raw := lit.GetText()
-	if raw == "" {
-		return ImportRef{}, false
-	}
-	var line, col int
-	if sym := lit.GetSymbol(); sym != nil {
-		line = sym.GetLine()
-		col = sym.GetColumn()
-	}
-	return ImportRef{
-		Name:   unquoteDmlString(raw),
-		Line:   line,
-		Column: col,
-	}, true
-}
-
-func unquoteDmlString(raw string) string {
-	if unquoted, err := strconv.Unquote(raw); err == nil {
-		return unquoted
-	}
-	if len(raw) >= 2 && raw[0] == '"' && raw[len(raw)-1] == '"' {
-		return raw[1 : len(raw)-1]
-	}
-	return raw
+	return dmlex.ExtractDmlFileMeta(tree)
 }
 
 // deviceImportResolver resolves imports and enforces workspace boundaries
@@ -426,39 +326,15 @@ func (r *deviceImportResolver) resolveImportPath(
 	importingPath, impName string,
 ) (string, bool) {
 	importingDir := filepath.Dir(filepath.Clean(importingPath))
-	nativeImp := filepath.FromSlash(impName)
-
-	if strings.HasPrefix(impName, "./") {
-		candidate := filepath.Join(importingDir, nativeImp)
-		if r.isRegularFile(candidate) {
-			return candidate, true
-		}
-		return "", false
-	}
-
-	if strings.HasPrefix(impName, "../") {
-		candidate := filepath.Join(importingDir, nativeImp)
-		if r.isRegularFile(candidate) {
-			return candidate, true
-		}
-	}
-
 	searchDirs := make([]string, 0, len(r.includeDirs)+2)
 	searchDirs = append(searchDirs, r.includeDirs...)
 	searchDirs = append(searchDirs, r.deviceDir, importingDir)
-
-	for _, dir := range searchDirs {
-		verCandidate := filepath.Join(dir, dmlex.SupportedDmlVersion, nativeImp)
-		if r.isRegularFile(verCandidate) {
-			return verCandidate, true
-		}
-		directCandidate := filepath.Join(dir, nativeImp)
-		if r.isRegularFile(directCandidate) {
-			return directCandidate, true
-		}
-	}
-
-	return "", false
+	return dmlex.ResolveImportPath(
+		importingPath,
+		impName,
+		searchDirs,
+		r.isRegularFile,
+	)
 }
 
 func (r *deviceImportResolver) isRegularFile(path string) bool {

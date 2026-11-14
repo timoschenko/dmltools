@@ -100,6 +100,7 @@ func TestGoDocCommand(t *testing.T) {
 		"./pkg/fs",
 		"./pkg/fs/lookup",
 		"./pkg/fs/stream",
+		"./pkg/lsp",
 		"./pkg/printer",
 		"./pkg/printer/dml_defaults",
 		"./pkg/printer/format",

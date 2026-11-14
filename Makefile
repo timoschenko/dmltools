@@ -65,6 +65,7 @@ $(ANTLR_FORMAT_JAR): | $(BUILD_DEPS_DIR)
 BUILD_APPS:=
 BUILD_APPS+=dmlast
 BUILD_APPS+=dmlfmt
+BUILD_APPS+=dmlsp
 
 # Intermediate ANTLR generated files in grammar/dml
 G4_GENERATED_FILES:=
