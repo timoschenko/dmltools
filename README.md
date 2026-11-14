@@ -1,12 +1,14 @@
 # dmltools
 
-[![CI](https://github.com/timoschenko/dmltools/actions/workflows/pre-commit.yml/badge.svg)](https://github.com/timoschenko/dmltools/actions/workflows/pre-commit.yml)
-[![Go Reference](https://pkg.go.dev/badge/github.com/timoschenko/dmltools.svg)](https://pkg.go.dev/github.com/timoschenko/dmltools)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/timoschenko/dmltools?logo=go)](go.mod)
+[![Go Reference](https://pkg.go.dev/badge/github.com/timoschenko/dmltools.svg)](https://pkg.go.dev/github.com/timoschenko/dmltools)
 [![Release](https://img.shields.io/github/v/release/timoschenko/dmltools)](https://github.com/timoschenko/dmltools/releases)
+[![Supported DML Versions](https://img.shields.io/badge/dml-1.4-blue)](https://github.com/timoschenko/dmltools/releases)
+[![CI](https://github.com/timoschenko/dmltools/actions/workflows/pre-commit.yml/badge.svg)](https://github.com/timoschenko/dmltools/actions/workflows/pre-commit.yml)
 [![License: GPL-2.0](https://img.shields.io/badge/License-GPL_2.0-blue.svg)](LICENSE)
 
-Tooling and utilities for Device Modeling Language (DML 1.4 & 1.2), including `dmlfmt` (an opinionated deterministic code formatter) and `dmlast` (an AST dumper).
+Tooling and utilities for Device Modeling Language (DML 1.4),
+including `dmlfmt` (an opinionated deterministic code formatter).
 
 ## Installation
 
@@ -24,7 +26,9 @@ go install github.com/timoschenko/dmltools/cmd/dmlast@latest
 
 ### Prebuilt Binaries
 
-Precompiled binaries for Linux (`amd64`, `arm64`) and Windows (`amd64`) are available on the [GitHub Releases](https://github.com/timoschenko/dmltools/releases) page.
+Precompiled binaries for Linux (`amd64`, `arm64`) and Windows (`amd64`)
+are available on the
+[GitHub Releases](https://github.com/timoschenko/dmltools/releases) page.
 
 ## Building from Sources
 

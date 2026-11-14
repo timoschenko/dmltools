@@ -74,3 +74,11 @@ jobs:
           args: release --clean --skip=validate
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish Go module to proxy.golang.org and pkg.go.dev
+        if: startsWith(github.ref_name, 'v') && !contains(github.ref_name, '-')
+        timeout-minutes: 5
+        run: |
+          GOPROXY=https://proxy.golang.org go list -m "github.com/timoschenko/dmltools@${GITHUB_REF_NAME}"
+          curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors -X POST \
+            "https://pkg.go.dev/fetch/github.com/timoschenko/dmltools@${GITHUB_REF_NAME}"
