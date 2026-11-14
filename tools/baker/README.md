@@ -8,15 +8,29 @@ It can either:
 
 ## Usage
 
+### From inside `tools/baker`:
+
 ```bash
+cd tools/baker
+
 # Print JSON to stdout
-go run ./tools/baker <path/to/file.go>
+go run . <path/to/file.go>
 
 # Print compact JSON to stdout
-go run ./tools/baker -compact <path/to/file.go>
+go run . -compact <path/to/file.go>
 
 # Generate split Go files in a folder and print filenames to stdout
-go run ./tools/baker -out ./pkg/dmlex/split <path/to/file.go>
+go run . -out ../../pkg/dmlex/split <path/to/file.go>
+```
+
+### From repository root:
+
+```bash
+# Print JSON to stdout
+(cd tools/baker && go run . "$(realpath <path/to/file.go>)")
+
+# Generate split Go files
+(cd tools/baker && go run . -out "$(realpath ./pkg/dmlex/split)" "$(realpath <path/to/file.go>)")
 ```
 
 ## Exit Codes
@@ -75,8 +89,8 @@ go run ./tools/baker -out ./pkg/dmlex/split <path/to/file.go>
 
 ```bash
 # Run unit tests
-go test -v ./tools/baker/...
+(cd tools/baker && go test -v ./...)
 
 # Run linter
-golangci-lint run ./tools/baker/...
+(cd tools/baker && golangci-lint run)
 ```

@@ -1,0 +1,420 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Sergei Timoshchenko
+
+package main
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestCheckData(t *testing.T) {
+	scanner, err := NewScannerWithLicense("GPL-2.0-only")
+	if err != nil {
+		t.Fatalf("unexpected error creating scanner: %v", err)
+	}
+
+	tests := []struct {
+		name         string
+		data         []byte
+		wantOK       bool
+		wantMatchSub string
+	}{
+		{
+			name: "Valid GPL-2.0-only SPDX header",
+			data: []byte(
+				"// SPDX-License-Identifier: GPL-2.0-only\npackage foo\n",
+			),
+			wantOK:       true,
+			wantMatchSub: "GPL-2.0-only",
+		},
+		{
+			name: "Disallowed GPL-2.0-or-later SPDX header",
+			data: []byte(
+				"// SPDX-License-Identifier: GPL-2.0-or-later\npackage foo\n",
+			),
+			wantOK:       false,
+			wantMatchSub: "GPL-2.0-or-later",
+		},
+		{
+			name: "Conflicting headers (GPL-2.0-only and GPL-2.0-or-later)",
+			data: []byte(
+				"// SPDX-License-Identifier: GPL-2.0-only\n" +
+					"// SPDX-License-Identifier: GPL-2.0-or-later\npackage foo\n",
+			),
+			wantOK:       false,
+			wantMatchSub: "GPL-2.0-only",
+		},
+		{
+			name: "Different license Apache-2.0",
+			data: []byte(
+				"// Licensed under the Apache License, Version 2.0 (the \"License\");\n" +
+					"// you may not use this file except in compliance with the License.\n" +
+					"// http://www.apache.org/licenses/LICENSE-2.0\npackage foo\n",
+			),
+			wantOK:       false,
+			wantMatchSub: "Apache-2.0",
+		},
+		{
+			name:         "No license header",
+			data:         []byte("package foo\n\nfunc Bar() {}\n"),
+			wantOK:       false,
+			wantMatchSub: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, matches := CheckData(scanner, tc.data, "GPL-2.0-only")
+			if ok != tc.wantOK {
+				t.Errorf("CheckData() ok = %v, want %v", ok, tc.wantOK)
+			}
+			if tc.wantMatchSub != "" {
+				found := false
+				for _, m := range matches {
+					if strings.Contains(m, tc.wantMatchSub) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf(
+						"expected matches %v to contain %q",
+						matches,
+						tc.wantMatchSub,
+					)
+				}
+			}
+		})
+	}
+}
+
+func TestCheckLicenseFileData(t *testing.T) {
+	scanner, err := NewScannerWithLicense("GPL-2.0-only")
+	if err != nil {
+		t.Fatalf("unexpected error creating scanner: %v", err)
+	}
+
+	canonicalLic, err := os.ReadFile("../../LICENSE")
+	if err != nil {
+		t.Fatalf("failed reading repository LICENSE: %v", err)
+	}
+
+	tests := []struct {
+		name            string
+		data            []byte
+		expectedLicense string
+		wantOK          bool
+		wantPercent     float64
+	}{
+		{
+			name:            "Canonical repo LICENSE",
+			data:            canonicalLic,
+			expectedLicense: "GPL-2.0-only",
+			wantOK:          true,
+			wantPercent:     90.0,
+		},
+		{
+			name: "Truncated license text",
+			data: []byte(
+				"GNU GENERAL PUBLIC LICENSE\nVersion 2, June 1991\n",
+			),
+			expectedLicense: "GPL-2.0-only",
+			wantOK:          false,
+			wantPercent:     0.0,
+		},
+		{
+			name: "Disallowed GPL-2.0-or-later notice",
+			data: []byte(
+				"This program is free software; you can redistribute it and/or modify\n" +
+					"it under the terms of the GNU General Public License as published by\n" +
+					"the Free Software Foundation; either version 2 of the License, or\n" +
+					"(at your option) any later version.\n",
+			),
+			expectedLicense: "GPL-2.0-only",
+			wantOK:          false,
+			wantPercent:     0.0,
+		},
+		{
+			name: "Different license file",
+			data: []byte(
+				"Apache License\nVersion 2.0, January 2004\nhttp://www.apache.org/licenses/\n",
+			),
+			expectedLicense: "GPL-2.0-only",
+			wantOK:          false,
+			wantPercent:     0.0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, percent, _ := CheckLicenseFileData(
+				scanner,
+				tc.data,
+				tc.expectedLicense,
+			)
+			if ok != tc.wantOK {
+				t.Errorf(
+					"CheckLicenseFileData() ok = %v, want %v (percent: %.2f)",
+					ok,
+					tc.wantOK,
+					percent,
+				)
+			}
+			if tc.wantOK && percent < tc.wantPercent {
+				t.Errorf(
+					"CheckLicenseFileData() percent = %.2f, want >= %.2f",
+					percent,
+					tc.wantPercent,
+				)
+			}
+		})
+	}
+}
+
+func TestIsGeneratedFile(t *testing.T) {
+	tests := []struct {
+		path string
+		data []byte
+		want bool
+	}{
+		{
+			path: "pkg/dmlex/dml_parser_expr_context.go",
+			data: []byte("package dmlex"),
+			want: true,
+		},
+		{
+			path: "pkg/dmlex/dml_lexer.go",
+			data: []byte("package dmlex"),
+			want: true,
+		},
+		{
+			path: "pkg/dmlex/tokentype_string.go",
+			data: []byte("package dmlex"),
+			want: true,
+		},
+		{
+			path: "cmd/dml-web-format/wasm_exec.js",
+			data: []byte("globalThis.fs = {};"),
+			want: true,
+		},
+		{
+			path: "pkg/dmlex/custom.go",
+			data: []byte(
+				"// Code generated by protoc-gen-go. DO NOT EDIT.\npackage dmlex\n",
+			),
+			want: true,
+		},
+		{
+			path: "cmd/dmlfmt/dmlfmt.go",
+			data: []byte(
+				"// SPDX-License-Identifier: GPL-2.0-only\npackage main\n",
+			),
+			want: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.path, func(t *testing.T) {
+			got := IsGeneratedFile(tc.path, tc.data)
+			if got != tc.want {
+				t.Errorf(
+					"IsGeneratedFile(%q) = %v, want %v",
+					tc.path,
+					got,
+					tc.want,
+				)
+			}
+		})
+	}
+}
+
+func TestExtractHeader(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+		want string
+	}{
+		{
+			name: "Go file with package",
+			data: []byte("// license header\n\npackage foo\nfunc Bar() {}\n"),
+			want: "// license header\n",
+		},
+		{
+			name: "Go file starting with package immediately",
+			data: []byte("package foo\nfunc Bar() {}\n"),
+			want: "",
+		},
+		{
+			name: "ANTLR grammar with grammar keyword",
+			data: []byte("// antlr comment\n\ngrammar dml;\nrule: A;\n"),
+			want: "// antlr comment\n",
+		},
+		{
+			name: "File without package or grammar",
+			data: []byte("Some arbitrary text"),
+			want: "Some arbitrary text",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := string(ExtractHeader(tc.data))
+			if got != tc.want {
+				t.Errorf("ExtractHeader() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRun(t *testing.T) {
+	tempDir := t.TempDir()
+
+	validFile := filepath.Join(tempDir, "valid.go")
+	if err := os.WriteFile(
+		validFile,
+		[]byte("// SPDX-License-Identifier: GPL-2.0-only\npackage main\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("failed to create valid file: %v", err)
+	}
+
+	invalidFile := filepath.Join(tempDir, "invalid.go")
+	if err := os.WriteFile(
+		invalidFile,
+		[]byte("package main\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("failed to create invalid file: %v", err)
+	}
+
+	generatedFile := filepath.Join(tempDir, "gen.go")
+	if err := os.WriteFile(
+		generatedFile,
+		[]byte("// Code generated by test. DO NOT EDIT.\npackage main\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("failed to create generated file: %v", err)
+	}
+
+	// 1. Run on single valid file
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"-verbose", validFile}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf(
+			"Run(validFile) = %d, want 0. Stderr: %s",
+			code,
+			stderr.String(),
+		)
+	}
+	if !strings.Contains(stdout.String(), "PASS:") {
+		t.Errorf("expected stdout to mention PASS:, got: %s", stdout.String())
+	}
+
+	// 2. Run on single invalid file
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{invalidFile}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("Run(invalidFile) = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "FAIL:") {
+		t.Errorf("expected stderr to mention FAIL:, got: %s", stderr.String())
+	}
+
+	// 3. Run on whole tempDir
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"-root", tempDir, "-verbose"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf(
+			"Run(-root tempDir) = %d, want 1 due to invalid.go",
+			code,
+		)
+	}
+	if !strings.Contains(stdout.String(), "SKIP:") {
+		t.Errorf(
+			"expected stdout to mention SKIP: for generated file, got: %s",
+			stdout.String(),
+		)
+	}
+
+	// 4. Invalid flag
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"-invalidflag"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("Run(-invalidflag) = %d, want 2", code)
+	}
+
+	// 5. Test valid LICENSE file in tempDir
+	licTempDir := t.TempDir()
+	canonicalLic, err := os.ReadFile("../../LICENSE")
+	if err != nil {
+		t.Fatalf("failed reading repository LICENSE: %v", err)
+	}
+	tempLicFile := filepath.Join(licTempDir, "LICENSE")
+	// #nosec G703 -- trusted test temp file
+	if err := os.WriteFile(
+		tempLicFile,
+		canonicalLic,
+		0o600,
+	); err != nil {
+		t.Fatalf("failed writing temp LICENSE: %v", err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"-root", licTempDir, "-verbose"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf(
+			"Run(-root licTempDir) = %d, want 0. Stderr: %s",
+			code,
+			stderr.String(),
+		)
+	}
+	if !strings.Contains(stdout.String(), "PASS: LICENSE") {
+		t.Errorf(
+			"expected stdout to mention PASS: LICENSE, got: %s",
+			stdout.String(),
+		)
+	}
+
+	// 6. Test positional arguments resolved with -root
+	stdout.Reset()
+	stderr.Reset()
+	code = Run(
+		[]string{"-root", licTempDir, "-verbose", "LICENSE"},
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf(
+			"Run(-root licTempDir LICENSE) = %d, want 0. Stderr: %s",
+			code,
+			stderr.String(),
+		)
+	}
+	if !strings.Contains(stdout.String(), "PASS: LICENSE") {
+		t.Errorf(
+			"expected stdout to mention PASS: LICENSE with positional arg, got: %s",
+			stdout.String(),
+		)
+	}
+
+	// 7. Verify failed files summary on stderr
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{invalidFile}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("Run(invalidFile) = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "Failed files (1):") {
+		t.Errorf(
+			"expected stderr to contain 'Failed files (1):', got: %s",
+			stderr.String(),
+		)
+	}
+}

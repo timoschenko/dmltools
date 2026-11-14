@@ -74,6 +74,10 @@ jobs:
         timeout-minutes: 6
         run: make test-ndebug
 
+      - name: Test Tools (make test-tools)
+        timeout-minutes: 3
+        run: make test-tools
+
       # Run lint only for target version
       - name: Install golangci-lint
         if: matrix.go == 'go.mod'
@@ -90,3 +94,8 @@ jobs:
         if: matrix.go == 'go.mod'
         timeout-minutes: 5
         run: pre-commit run --all-files --show-diff-on-failure
+
+      - name: Run license check
+        if: matrix.go == 'go.mod'
+        timeout-minutes: 2
+        run: make license-check
