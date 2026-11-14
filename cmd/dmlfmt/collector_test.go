@@ -897,3 +897,46 @@ func TestCollector_GitIgnore_OnIgnoreCallback(t *testing.T) {
 		}
 	}
 }
+
+func TestCollector_MaxFileSize_50MiB(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	gitIgnorePath := filepath.Join(tmpDir, ".gitignore")
+	f, err := os.Create(filepath.Clean(gitIgnorePath))
+	if err != nil {
+		t.Fatalf("failed to create .gitignore: %v", err)
+	}
+	if _, err := f.WriteString("skip.dml\n"); err != nil {
+		_ = f.Close()
+		t.Fatalf("failed to write rule to .gitignore: %v", err)
+	}
+	if err := f.Truncate(2 << 20); err != nil {
+		_ = f.Close()
+		t.Fatalf("failed to truncate .gitignore to 2 MiB: %v", err)
+	}
+	_ = f.Close()
+
+	createTestTree(t, tmpDir, []string{
+		"keep.dml",
+		"skip.dml",
+	})
+
+	cfg := &CLIConfig{
+		Include: DefaultIncludePattern,
+		Exclude: DefaultExcludePattern,
+	}
+	finder, err := newTestFinder(cfg)
+	if err != nil {
+		t.Fatalf("failed to create test finder: %v", err)
+	}
+
+	files, err := finder.Collect([]string{tmpDir})
+	if err != nil {
+		t.Fatalf("unexpected collect error: %v", err)
+	}
+
+	expectedFiles := []string{filepath.Join(tmpDir, "keep.dml")}
+	if !slices.Equal(files, expectedFiles) {
+		t.Fatalf("expected %v, got %v", expectedFiles, files)
+	}
+}

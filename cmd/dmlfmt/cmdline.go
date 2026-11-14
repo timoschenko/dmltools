@@ -31,6 +31,9 @@ const (
 	ExitCodeOK            = 0
 	ExitCodeWouldReformat = 1
 	ExitCodeInternalError = 123
+
+	// MaxFileSize defines the maximum permitted file size in bytes for disk files (50 MiB).
+	MaxFileSize int64 = 50 << 20
 )
 
 // ColorMode specifies the coloring behavior for terminal outputs.

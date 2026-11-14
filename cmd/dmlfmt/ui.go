@@ -236,18 +236,26 @@ func (u *UI) WouldReformat(filename string) {
 
 // Ignored writes an ignored-file notice to stdout.
 func (u *UI) Ignored(filename, version string) {
+	if version != "" {
+		version = "dml " + version
+	}
+	u.IgnoredReason(filename, version)
+}
+
+// IgnoredReason writes an ignored notice with a reason to stdout.
+func (u *UI) IgnoredReason(filename, reason string) {
 	wr := u.out
 	var msg string
-	if version != "" {
+	if reason != "" {
 		if wr.IsColorEnabled() {
 			msg = fmt.Sprintf(
-				"%s %s (dml %s)\n",
+				"%s %s (%s)\n",
 				ansiBoldYellow+"ignored"+ansiReset,
 				ansiBold+filename+ansiReset,
-				version,
+				reason,
 			)
 		} else {
-			msg = fmt.Sprintf("ignored %s (dml %s)\n", filename, version)
+			msg = fmt.Sprintf("ignored %s (%s)\n", filename, reason)
 		}
 	} else {
 		if wr.IsColorEnabled() {

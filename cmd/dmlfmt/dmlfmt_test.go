@@ -2661,6 +2661,155 @@ func TestRun_Dml12_CheckStdin_Errors(t *testing.T) {
 	}
 }
 
+func TestRun_OversizedFile_Ignored(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "huge.dml")
+	f, err := os.Create(filepath.Clean(filePath))
+	if err != nil {
+		t.Fatalf("failed to create huge file: %v", err)
+	}
+	if err := f.Truncate(51 << 20); err != nil {
+		_ = f.Close()
+		t.Fatalf("failed to truncate huge file: %v", err)
+	}
+	_ = f.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{filePath}, &stdout, &stderr)
+	if code != ExitCodeInternalError {
+		t.Fatalf(
+			"expected ExitCodeInternalError (123), got %d (stderr: %s)",
+			code,
+			stderr.String(),
+		)
+	}
+	expectedMsg := fmt.Sprintf(
+		"ignored %s (file size exceeds 50 MiB limit)\n1 file failed to reformat.\n",
+		filePath,
+	)
+	if stdout.String() != expectedMsg {
+		t.Errorf("expected stdout %q, got %q", expectedMsg, stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("expected empty stderr, got %q", stderr.String())
+	}
+}
+
+func TestRun_OversizedFile_CheckMode(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "huge.dml")
+	f, err := os.Create(filepath.Clean(filePath))
+	if err != nil {
+		t.Fatalf("failed to create huge file: %v", err)
+	}
+	if err := f.Truncate(51 << 20); err != nil {
+		_ = f.Close()
+		t.Fatalf("failed to truncate huge file: %v", err)
+	}
+	_ = f.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--check", filePath}, &stdout, &stderr)
+	if code != ExitCodeInternalError {
+		t.Fatalf(
+			"expected ExitCodeInternalError (123), got %d (stderr: %s)",
+			code,
+			stderr.String(),
+		)
+	}
+	expectedMsg := fmt.Sprintf(
+		"ignored %s (file size exceeds 50 MiB limit)\n1 file would fail to reformat.\n",
+		filePath,
+	)
+	if stdout.String() != expectedMsg {
+		t.Errorf("expected stdout %q, got %q", expectedMsg, stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("expected empty stderr, got %q", stderr.String())
+	}
+}
+
+func TestRun_OversizedFile_MixedWithValid(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	hugePath := filepath.Join(tmpDir, "huge.dml")
+	f, err := os.Create(filepath.Clean(hugePath))
+	if err != nil {
+		t.Fatalf("failed to create huge file: %v", err)
+	}
+	if err := f.Truncate(51 << 20); err != nil {
+		_ = f.Close()
+		t.Fatalf("failed to truncate huge file: %v", err)
+	}
+	_ = f.Close()
+
+	validPath := filepath.Join(tmpDir, "valid.dml")
+	validContent := []byte("dml  1.4 ;\n\ndevice  dev ;\n")
+	if err := os.WriteFile(validPath, validContent, 0600); err != nil {
+		t.Fatalf("failed to write valid file: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{tmpDir}, &stdout, &stderr)
+	if code != ExitCodeInternalError {
+		t.Fatalf(
+			"expected ExitCodeInternalError (123), got %d (stderr: %s)",
+			code,
+			stderr.String(),
+		)
+	}
+	outStr := stdout.String()
+	expectedIgnored := fmt.Sprintf(
+		"ignored %s (file size exceeds 50 MiB limit)\n",
+		hugePath,
+	)
+	if !strings.Contains(outStr, expectedIgnored) {
+		t.Errorf(
+			"expected stdout to contain %q, got %q",
+			expectedIgnored,
+			outStr,
+		)
+	}
+	expectedReformatted := fmt.Sprintf(
+		"reformatted %s\n",
+		validPath,
+	)
+	if !strings.Contains(outStr, expectedReformatted) {
+		t.Errorf(
+			"expected stdout to contain %q, got %q",
+			expectedReformatted,
+			outStr,
+		)
+	}
+	if !strings.Contains(
+		outStr,
+		"1 file reformatted, 1 file failed to reformat.\n",
+	) {
+		t.Errorf("expected summary line in stdout, got %q", outStr)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("expected empty stderr, got %q", stderr.String())
+	}
+
+	afterValid, err := os.ReadFile(filepath.Clean(validPath))
+	if err != nil {
+		t.Fatalf("failed to read valid file: %v", err)
+	}
+	expectedValid := "dml 1.4;\n\ndevice dev;\n"
+	if string(afterValid) != expectedValid {
+		t.Errorf(
+			"expected valid file reformatted to %q, got %q",
+			expectedValid,
+			string(afterValid),
+		)
+	}
+}
+
 func TestRun_Quiet_Files(t *testing.T) {
 	t.Parallel()
 

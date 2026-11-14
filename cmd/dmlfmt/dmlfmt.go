@@ -184,6 +184,7 @@ func newFinderFromConfig(cfg *CLIConfig) (lookup.Finder, error) {
 		lookup.WithExclude(cfg.Exclude),
 		lookup.WithExtendExclude(cfg.ExtendExclude),
 		lookup.WithForceExclude(cfg.ForceExclude),
+		lookup.WithMaxFileSize(MaxFileSize),
 	}
 	if !slices.Contains(cfg.ExplicitFlags, "exclude") &&
 		cfg.Exclude == DefaultExcludePattern {

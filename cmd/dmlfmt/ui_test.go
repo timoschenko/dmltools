@@ -102,6 +102,18 @@ func TestUIRouting(t *testing.T) {
 	out.Reset()
 	err.Reset()
 
+	// IgnoredReason -> out
+	ui.IgnoredReason("test.dml", "file size exceeds 50 MiB limit")
+	if out.Len() == 0 || err.Len() != 0 {
+		t.Errorf(
+			"IgnoredReason should write to out only, got out=%q, err=%q",
+			out.String(),
+			err.String(),
+		)
+	}
+	out.Reset()
+	err.Reset()
+
 	// SyntaxError -> err
 	ui.SyntaxError("test.dml", 1, 2, "bad")
 	if err.Len() == 0 || out.Len() != 0 {
@@ -190,6 +202,27 @@ func TestUIUncoloredOutput(t *testing.T) {
 	}
 	out.Reset()
 
+	ui.IgnoredReason("dev.dml", "file size exceeds 50 MiB limit")
+	if out.String() != "ignored dev.dml (file size exceeds 50 MiB limit)\n" ||
+		err.Len() != 0 {
+		t.Errorf(
+			"unexpected output: out=%q err=%q",
+			out.String(),
+			err.String(),
+		)
+	}
+	out.Reset()
+
+	ui.IgnoredReason("dev.dml", "")
+	if out.String() != "ignored dev.dml\n" || err.Len() != 0 {
+		t.Errorf(
+			"unexpected output: out=%q err=%q",
+			out.String(),
+			err.String(),
+		)
+	}
+	out.Reset()
+
 	ui.SyntaxError("dev.dml", 5, 10, "mismatched token")
 	if err.String() != "dev.dml:5 column 10: Syntax error - mismatched token\n" {
 		t.Errorf("unexpected output: %q", err.String())
@@ -256,6 +289,34 @@ func TestUIColoredOutput(t *testing.T) {
 		!strings.Contains(outStr, "(dml 1.2)") ||
 		!strings.Contains(outStr, ansiReset) {
 		t.Errorf("expected colored ignored message, got %q", outStr)
+	}
+	if err.Len() != 0 {
+		t.Errorf("expected err to be empty, got %q", err.String())
+	}
+	out.Reset()
+
+	ui.IgnoredReason("dev.dml", "file size exceeds 50 MiB limit")
+	outStr = out.String()
+	if !strings.Contains(outStr, ansiBoldYellow) ||
+		!strings.Contains(outStr, "ignored") ||
+		!strings.Contains(outStr, "(file size exceeds 50 MiB limit)") ||
+		!strings.Contains(outStr, ansiReset) {
+		t.Errorf("expected colored ignored reason message, got %q", outStr)
+	}
+	if err.Len() != 0 {
+		t.Errorf("expected err to be empty, got %q", err.String())
+	}
+	out.Reset()
+
+	ui.IgnoredReason("dev.dml", "")
+	outStr = out.String()
+	if !strings.Contains(outStr, ansiBoldYellow) ||
+		!strings.Contains(outStr, "ignored") ||
+		!strings.Contains(outStr, ansiReset) {
+		t.Errorf(
+			"expected colored ignored empty reason message, got %q",
+			outStr,
+		)
 	}
 	if err.Len() != 0 {
 		t.Errorf("expected err to be empty, got %q", err.String())

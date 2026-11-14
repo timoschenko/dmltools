@@ -6,9 +6,9 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -274,6 +274,9 @@ func processFormattingJob(
 	}
 }
 
+// ErrFileTooLarge indicates a file exceeds the MaxFileSize limit.
+var ErrFileTooLarge = errors.New("file size exceeds 50 MiB limit")
+
 // readInputJob opens a file, reads its contents into a HashingStream, and closes
 // the file handle before returning.
 func readInputJob(path string, stats StatsCollector) (InputJob, error) {
@@ -296,12 +299,8 @@ func readInputJob(path string, stats StatsCollector) (InputJob, error) {
 			err,
 		)
 	}
-	if info.Size() >= math.MaxInt {
-		return InputJob{}, fmt.Errorf(
-			"file %s exceeds maximum supported size (%d bytes)",
-			path,
-			info.Size(),
-		)
+	if info.Size() > MaxFileSize {
+		return InputJob{}, ErrFileTooLarge
 	}
 
 	size := int(info.Size())
@@ -402,6 +401,15 @@ func runPipeline(
 			}
 			job, readErr := readInputJob(path, stats)
 			if readErr != nil {
+				if errors.Is(readErr, ErrFileTooLarge) {
+					ui.IgnoredReason(
+						path,
+						readErr.Error(),
+					)
+					hasErrors = true
+					report.IncrementFailed()
+					continue
+				}
 				ui.PrintError("Error: %v", readErr)
 				hasErrors = true
 				report.IncrementFailed()
