@@ -16,7 +16,6 @@ package.json
 
 # go generate {{{
 grammar/dml/dml_*.go
-pkg/dmlex/tokentype_string.go
 # }}}
 
 build/

@@ -79,6 +79,7 @@ DMLEX_GENERATED_FILES+=./pkg/dmlex/dml_base_listener.go
 DMLEX_GENERATED_FILES+=./pkg/dmlex/dml_lexer.go
 DMLEX_GENERATED_FILES+=./pkg/dmlex/dml_listener.go
 DMLEX_GENERATED_FILES+=./pkg/dmlex/dml_parser_dml_parser.go
+DMLEX_GENERATED_FILES+=./pkg/dmlex/tokentype_string.go
 
 G4_FORMAT_FLAG:=$(BUILD_ENV_DIR)/g4-format.flag
 $(G4_FORMAT_FLAG): $(BUILD_ENV_DIR) $(ANTLR_FORMAT_JAR) $(G4_DML) $(WS_FIXER)
@@ -125,6 +126,9 @@ $(GO_GENERATED_FLAG): $(BUILD_ENV_DIR)
 endif
 $(GO_GENERATED_FLAG):
 	$(GO) generate ./pkg/dmlex/...
+ifneq ($(filter-out 0 false FALSE no NO,$(CI)),)
+	@$(CHECK_GENERATED_CLEAN)
+endif
 	$(file > $@,)
 
 ifeq ($(filter-out 0 false FALSE no NO,$(SKIP_ANTLR)),)
