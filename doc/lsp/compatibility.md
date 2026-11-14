@@ -31,6 +31,8 @@ their specific limitations, and unsupported LSP commands.
 | `textDocument/didClose` | Client -> Server | Notification | Supported (with limitations) | Clears diagnostics for the file and drops the in-memory buffer. |
 | `textDocument/publishDiagnostics` | Server -> Client | Notification | Supported (with limitations) | Pushes syntax errors and DML 1.2 `EUNIMPL` warnings. |
 | `textDocument/definition` | Client -> Server | Request | Supported (with limitations) | Resolves symbols, hierarchies, templates, and `import` paths. |
+| `textDocument/semanticTokens/full` | Client -> Server | Request | Supported (with limitations) | Computes semantic highlighting tokens for an entire document. |
+| `textDocument/semanticTokens/range` | Client -> Server | Request | Supported (with limitations) | Computes semantic highlighting tokens overlapping a requested range. |
 
 ---
 
@@ -43,6 +45,7 @@ their specific limitations, and unsupported LSP commands.
     - `positionEncoding`: `"utf-16"`
     - `textDocumentSync`: `{ openClose: true, change: 2 (Incremental), save: {} }`
     - `definitionProvider`: `true`
+    - `semanticTokensProvider`: `{ legend: { tokenTypes: [...], tokenModifiers: [...] }, full: true, range: true }`
   - **Limitations**:
     - **Single Workspace Root**: Only `workspaceFolders[0].uri` (or `rootUri` if `workspaceFolders` is empty) is used as the workspace root for `import` path lookup. Additional folders in multi-root workspaces are ignored.
     - **No `initializationOptions`**: Custom initialization options (such as extra import include directories or custom diagnostic debounce settings) are not supported.
@@ -106,6 +109,15 @@ their specific limitations, and unsupported LSP commands.
     - **Flat Method Scope**: Local variables inside nested `{ ... }` blocks within the same method share a flat method-level scope; shadowed names inside separate nested blocks resolve to the last declaration in that method.
     - **Files with Syntax Errors**: When a buffer contains syntax errors, resolution relies on a best-effort partial parse of the current buffer, so symbols located after a parse failure may not resolve.
 
+- **`textDocument/semanticTokens/full`** & **`textDocument/semanticTokens/range`** *(Requests, Client -> Server)*
+  - **Behavior**: Returns UTF-16 delta-encoded `SemanticTokens` for the full document or overlapping `Range` using a hybrid lexer-baseline and local AST/symbol pass (`18` token types, `6` token modifiers). Multi-line comments are split per line with trailing horizontal whitespace stripped.
+  - **Limitations**:
+    - **Same-File Resolution Only**: Does not follow cross-file `import` statements; symbols defined only in imported files rely on syntactic call/member heuristics (`function` for bare calls, `method` for member calls, `property` for member accesses) or remain untokenized for bare identifiers.
+    - **No Delta Updates**: `textDocument/semanticTokens/full/delta` is not implemented (`resultId` is omitted).
+    - **Embedded C Blocks**: `C_CODE_BLOCK` regions (`%{ ... %}`) are left untokenized.
+    - **DML 1.2 Fallback**: Documents with a `dml 1.2;` header use lexer-baseline tokens only.
+    - **Files with Syntax Errors**: Unparsed regions fall back cleanly to lexer-baseline tokens (`keyword`, `modifier`, `comment`, `string`, `number`, `operator`, built-in types).
+
 ---
 
 ## 3. Unsupported LSP API Commands
@@ -166,9 +178,7 @@ Any LSP 3.17 request or notification not listed in Section 2 is **unsupported** 
 | Method | Direction | Notes |
 | :--- | :--- | :--- |
 | `textDocument/documentHighlight` | Client -> Server | Unsupported. |
-| `textDocument/semanticTokens/full` | Client -> Server | Unsupported (syntax highlighting relies on editor grammars). |
-| `textDocument/semanticTokens/full/delta` | Client -> Server | Unsupported. |
-| `textDocument/semanticTokens/range` | Client -> Server | Unsupported. |
+| `textDocument/semanticTokens/full/delta` | Client -> Server | Unsupported (use `textDocument/semanticTokens/full` or `textDocument/semanticTokens/range`). |
 | `textDocument/foldingRange` | Client -> Server | Unsupported (folding relies on editor indentation/grammar). |
 | `textDocument/selectionRange` | Client -> Server | Unsupported. |
 | `textDocument/linkedEditingRange` | Client -> Server | Unsupported. |

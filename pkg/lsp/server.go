@@ -209,6 +209,11 @@ func (s *Server) Initialize(
 			PositionEncoding:   protocol.PositionEncodingKindUTF16,
 			TextDocumentSync:   syncOptions,
 			DefinitionProvider: protocol.Boolean(true),
+			SemanticTokensProvider: &protocol.SemanticTokensOptions{
+				Legend: SemanticTokensLegend(),
+				Full:   protocol.Boolean(true),
+				Range:  protocol.Boolean(true),
+			},
 		},
 		ServerInfo: protocol.ServerInfo{
 			Name:    "dmlsp",
@@ -290,9 +295,9 @@ func (s *Server) publishDiagnostics(
 		version = entry.Version
 	}
 
-	diags, tree := Diagnose(entry.Content)
+	diags, tokens, tree := diagnoseWithTokens(entry.Content)
 	if len(diags) == 0 && tree != nil {
-		if !s.fsCache.SetASTIfMatch(uriStr, targetHash, tree) {
+		if !s.fsCache.setParsedIfMatch(uriStr, targetHash, tokens, tree) {
 			return
 		}
 	} else if !s.fsCache.HasOverlayWithHash(uriStr, targetHash) {
@@ -464,6 +469,57 @@ func (s *Server) Definition(
 	}
 
 	return loc, nil
+}
+
+// SemanticTokensFull handles "textDocument/semanticTokens/full" requests.
+func (s *Server) SemanticTokensFull(
+	ctx context.Context,
+	params *protocol.SemanticTokensParams,
+) (*protocol.SemanticTokens, error) {
+	uriStr := string(params.TextDocument.URI)
+	s.logger.Debug("textDocument/semanticTokens/full",
+		slog.String("uri", uriStr),
+	)
+
+	res, err := ComputeSemanticTokens(ctx, s.fsCache, uriStr)
+	if err != nil {
+		s.logger.Error("failed to compute semantic tokens",
+			slog.String("uri", uriStr),
+			slog.Any("error", err),
+		)
+		return nil, err
+	}
+
+	return res, nil
+}
+
+// SemanticTokensRange handles "textDocument/semanticTokens/range" requests.
+func (s *Server) SemanticTokensRange(
+	ctx context.Context,
+	params *protocol.SemanticTokensRangeParams,
+) (*protocol.SemanticTokens, error) {
+	uriStr := string(params.TextDocument.URI)
+	s.logger.Debug("textDocument/semanticTokens/range",
+		slog.String("uri", uriStr),
+		slog.Int("startLine", int(params.Range.Start.Line)),
+		slog.Int("endLine", int(params.Range.End.Line)),
+	)
+
+	res, err := ComputeSemanticTokensRange(
+		ctx,
+		s.fsCache,
+		uriStr,
+		params.Range,
+	)
+	if err != nil {
+		s.logger.Error("failed to compute semantic tokens range",
+			slog.String("uri", uriStr),
+			slog.Any("error", err),
+		)
+		return nil, err
+	}
+
+	return res, nil
 }
 
 // DidOpen handles the "textDocument/didOpen" notification.

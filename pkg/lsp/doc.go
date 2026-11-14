@@ -4,6 +4,7 @@
 // Package lsp implements the Language Server Protocol (LSP) for Device
 // Modeling Language (DML).
 //
-// It provides document synchronization, syntax diagnostics, go-to-definition,
-// and symbol hierarchy extraction for integration with IDEs and editors.
+// It provides document synchronization, syntax diagnostics, semantic token
+// highlighting, go-to-definition, and symbol hierarchy extraction for
+// integration with IDEs and editors.
 package lsp

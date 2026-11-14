@@ -173,11 +173,48 @@ The following DML declarations are indexed and navigable within their lexical, o
 
 ---
 
-## 3. Known Limitations
+## 3. Semantic Tokens Highlighting
+
+`dmlsp` advertises `semanticTokensProvider` (`full: true`, `range: true`) and serves both `textDocument/semanticTokens/full` and `textDocument/semanticTokens/range` requests (incremental `full/delta` is not supported).
+
+Highlighting uses a two-stage hybrid pipeline:
+1. **Lexer Baseline**: Classifies comments (splitting multi-line block comments per line), string/char literals, numeric literals, operators, qualifiers, and keywords from the token stream, ensuring incomplete buffers mid-edit and `dml 1.2;` files continue to highlight reliably.
+2. **AST & Same-File Symbol Refinement**: Walks the parse tree with same-file symbol resolution to reclassify keywords used as identifiers (e.g., `size`, `data`, `register`), declaration/definition sites, local/object/template members, `this`/`parent`/`dev`, method/function calls, types, and `struct`/`layout`/`bitfields` members.
+
+### Supported Token Types & Modifiers
+
+| Semantic Token Type | DML Constructs |
+| :--- | :--- |
+| `comment` | Line comments (`// ...`) and block comments (`/* ... */`, per-line spans) |
+| `keyword` | Control/declaration keywords, `#if`/`#else`/`#foreach`/`#select`, `true`/`false`/`NULL`/`undefined`, `log` kind, time unit (`s`, etc.) |
+| `modifier` | Method/storage/type qualifiers (`inline`, `shared`, `independent`, `startup`, `memoized`, `throws`, `const`, `static`, `vect`, `signed`, `unsigned`, etc.) |
+| `string` | String and character literals |
+| `number` | Integer, hex, binary, and float literals |
+| `operator` | Arithmetic, bitwise, logical, relational, assignment, ternary (`?`, `#?`), `->`, `@`, `...` |
+| `interface` | `template` definitions and `is` / `in each` / `each` / `sequence()` template references |
+| `class` | `device`, `subdevice`, `bank`, `group`, `port`, `connect`, `implement`, `interface`, `register`, `field`, `attribute`, `event` |
+| `property` | `param`, `struct`/`union`/`layout`/`bitfields` fields, `.field` designated initializers, unresolved member accesses |
+| `method` | `method` declarations/definitions, resolved method references, unresolved member calls (`obj.m()`) |
+| `function` | `extern` functions and unresolved bare calls (`fn()`) |
+| `parameter` | Method input/output parameters and `after h -> (x, y)` message bindings |
+| `variable` | `local`, `session`, `saved`, `static`, loop (`for`/`foreach`/`select`), and array-index variables; `this`, `parent`, `dev` |
+| `enumMember` | `constant` and `loggroup` declarations/references |
+| `event` | `hook` declarations and references |
+| `type` | Primitive C/DML types (`int`, `uint32`, `bool`, standalone `unsigned`/`signed`, etc.) and `typedef`s |
+| `struct` | `struct`, `union`, `layout`, `bitfields` tags and aliases |
+| `label` | `goto` labels |
+
+Token modifiers emitted in bitmask form: `declaration`, `definition`, `readonly` (`constant` and `const`-qualified variables/parameters), `static` (`static`/`session`/`saved`), `abstract` (`shared method ...;`), and `defaultLibrary` (`this`, `parent`, `dev`, and built-in primitive types).
+
+---
+
+## 4. Known Limitations
 
 - **Single Target Location**: Go to Definition returns at most one target location. When a `param` or `default method` is declared in a template and overridden in an object, navigating to it resolves to the highest-precedence definition in scope order rather than offering a list of all overrides.
 - **Import Search Directories**: `dmlsp` searches only the importing file's directory and the primary workspace root (plus their `1.4/` subdirectories). Additional external include paths (such as custom `-I` directories outside the workspace) cannot currently be configured.
-- **`in each` Statements**: Template applications (`in each ... is ...`) and declarations inside `in each` blocks are not indexed for member resolution.
-- **Embedded C Blocks (`%{ ... %}`)**: Symbols defined inside `header %{ ... %}` and `footer %{ ... %}` C blocks are not indexed.
+- **`in each` Statements**: Member declarations inside `in each` blocks are not indexed for member Go to Definition resolution (though `in each <template>` template names are highlighted semantically).
+- **Embedded C Blocks (`%{ ... %}`)**: Symbols defined inside `header %{ ... %}` and `footer %{ ... %}` C blocks are not indexed for navigation and are left untokenized by semantic highlighting.
+- **Same-File Scope for Semantic Tokens**: Semantic tokens resolve symbols and template inheritance within the current file only without following cross-file `import` statements; unresolved bare calls default to `function`, unresolved member calls to `method`, unresolved member accesses to `property`, and unresolved bare identifiers remain untokenized.
+- **DML 1.2 Highlighting Fallback**: Files declaring `dml 1.2;` keep the lexer-baseline semantic tokens only without DML 1.4 AST refinement.
 - **Flat Method Scope for Locals**: Local variables declared inside nested `{ ... }` blocks within the same method share a single method-level scope; if two nested blocks declare local variables with the same name, navigation resolves to the last declaration in that method.
-- **Buffers with Active Syntax Errors**: When a file currently contains syntax errors, Go to Definition relies on a best-effort partial parse of the current buffer, so symbols after the syntax error may fail to resolve until the error is fixed.
+- **Buffers with Active Syntax Errors**: When a file currently contains syntax errors, Go to Definition relies on a best-effort partial parse of the current buffer, so symbols after the syntax error may fail to resolve until the error is fixed, while Semantic Tokens retain lexer-baseline tokens across broken regions.

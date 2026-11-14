@@ -28,19 +28,26 @@ const (
 	SymbolKindHook
 	SymbolKindExtern
 	SymbolKindLogGroup
+	SymbolKindParameter
+	SymbolKindStruct
 )
 
 // Symbol represents a declared DML symbol with location and hierarchy.
 type Symbol struct {
-	Name      string
-	Kind      SymbolKind
-	URI       uri.URI
-	NameRange protocol.Range
-	FullRange protocol.Range
-	Parent    *Symbol
-	Children  map[string]*Symbol
-	Scope     *Scope
-	Templates []string
+	Name         string
+	Kind         SymbolKind
+	URI          uri.URI
+	NameRange    protocol.Range
+	FullRange    protocol.Range
+	Parent       *Symbol
+	Children     map[string]*Symbol
+	Scope        *Scope
+	Templates    []string
+	IsConst      bool
+	IsStatic     bool
+	IsAbstract   bool
+	IsFunc       bool
+	IsDefinition bool
 }
 
 // ScopeKind defines whether a scope is global, object, method, or block.
@@ -169,36 +176,117 @@ func extractIdent(ctx dmlex.IIdentContext) (string, protocol.Range) {
 	return ctx.GetText(), ruleRange(ctx)
 }
 
-func findIdentInTree(t antlr.Tree) (string, protocol.Range) {
+func findIdentTokenInTree(t antlr.Tree) antlr.Token {
 	if t == nil {
-		return "", protocol.Range{}
+		return nil
 	}
 	switch node := t.(type) {
 	case dmlex.ICdecl_qualifier_ident_array_funcContext:
-		return findIdentInTree(node.Cdecl_ident_array_func())
+		return findIdentTokenInTree(node.Cdecl_ident_array_func())
 	case *dmlex.CdeclIdentContext:
 		if node.Ident() != nil {
-			return node.Ident().GetText(), ruleRange(node.Ident())
+			return node.Ident().GetStart()
 		}
-		return "", protocol.Range{}
+		return nil
 	case *dmlex.CdeclArrayContext:
-		return findIdentInTree(node.Cdecl_ident_array_func())
+		return findIdentTokenInTree(node.Cdecl_ident_array_func())
 	case *dmlex.CdeclFuncArgsContext:
-		return findIdentInTree(node.Cdecl_ident_array_func())
+		return findIdentTokenInTree(node.Cdecl_ident_array_func())
 	case *dmlex.CdeclFuncIdentContext:
-		return findIdentInTree(node.Cdecl_qualifier_ident_array_func())
+		return findIdentTokenInTree(node.Cdecl_qualifier_ident_array_func())
 	case *dmlex.CdeclNoneContext:
-		return "", protocol.Range{}
+		return nil
 	case dmlex.IIdentContext:
-		return node.GetText(), ruleRange(node)
+		return node.GetStart()
 	}
 	childCount := t.GetChildCount()
 	for i := range childCount {
-		if name, r := findIdentInTree(t.GetChild(i)); name != "" {
-			return name, r
+		if tok := findIdentTokenInTree(t.GetChild(i)); tok != nil {
+			return tok
 		}
 	}
-	return "", protocol.Range{}
+	return nil
+}
+
+func isConstCdecl(c dmlex.ICdeclContext) bool {
+	if c == nil {
+		return false
+	}
+	seenMul := false
+	constAfterLastMul := false
+	if q := c.Cdecl_qualifier_ident_array_func(); q != nil {
+		for _, tq := range q.AllTypeQualifier() {
+			if tq.MUL() != nil {
+				seenMul = true
+				constAfterLastMul = false
+			} else if tq.CONST() != nil {
+				constAfterLastMul = true
+			}
+		}
+	}
+	if !seenMul {
+		return c.CONST() != nil || constAfterLastMul
+	}
+	return constAfterLastMul
+}
+
+func isDirectFuncCdecl(
+	q dmlex.ICdecl_qualifier_ident_array_funcContext,
+) bool {
+	if q == nil {
+		return false
+	}
+	fnCtx, ok := q.Cdecl_ident_array_func().(*dmlex.CdeclFuncArgsContext)
+	if !ok {
+		return false
+	}
+	inner := fnCtx.Cdecl_ident_array_func()
+	if _, isDirect := inner.(*dmlex.CdeclIdentContext); isDirect {
+		return true
+	}
+	if _, isNone := inner.(*dmlex.CdeclNoneContext); isNone {
+		return true
+	}
+	return false
+}
+
+func isStructLikeBasetype(b dmlex.IBasetypeContext) bool {
+	if b == nil {
+		return false
+	}
+	return b.Struct_() != nil || b.Union() != nil ||
+		b.Layout() != nil || b.Bitfields() != nil
+}
+
+func findCdeclIdentToken(cd dmlex.ICdeclContext) antlr.Token {
+	if cd == nil {
+		return nil
+	}
+	if tok := findIdentTokenInTree(
+		cd.Cdecl_qualifier_ident_array_func(),
+	); tok != nil {
+		return tok
+	}
+	b := cd.Basetype()
+	if b == nil {
+		return nil
+	}
+	su := b.Signed_or_unsigned_typeident()
+	if su == nil || (su.SIGNED() == nil && su.UNSIGNED() == nil) {
+		return nil
+	}
+	if su.Typeident() != nil && su.Typeident().Ident() != nil {
+		return findIdentTokenInTree(su.Typeident().Ident())
+	}
+	return nil
+}
+
+func findCdeclIdent(cd dmlex.ICdeclContext) (string, protocol.Range) {
+	tok := findCdeclIdentToken(cd)
+	if tok == nil {
+		return "", protocol.Range{}
+	}
+	return tok.GetText(), tokenRange(tok)
 }
 
 type symbolCollector struct {
@@ -250,13 +338,14 @@ func (c *symbolCollector) EnterDeviceTag(ctx *dmlex.DeviceTagContext) {
 		return
 	}
 	sym := &Symbol{
-		Name:      name,
-		Kind:      SymbolKindObject,
-		URI:       c.fileSymbols.URI,
-		NameRange: r,
-		FullRange: ruleRange(ctx),
-		Children:  make(map[string]*Symbol),
-		Templates: c.fileSymbols.DeviceTemplates,
+		Name:         name,
+		Kind:         SymbolKindObject,
+		URI:          c.fileSymbols.URI,
+		NameRange:    r,
+		FullRange:    ruleRange(ctx),
+		Children:     make(map[string]*Symbol),
+		Templates:    c.fileSymbols.DeviceTemplates,
+		IsDefinition: true,
 	}
 	c.fileSymbols.DeviceSymbol = sym
 	c.currentScope.Symbols[name] = sym
@@ -281,21 +370,21 @@ func (c *symbolCollector) EnterTemplateStatement(
 	ctx *dmlex.TemplateStatementContext,
 ) {
 	name, r := extractObjident(ctx.Objident())
-	if name == "" {
-		return
-	}
 	sym := &Symbol{
-		Name:      name,
-		Kind:      SymbolKindTemplate,
-		URI:       c.fileSymbols.URI,
-		NameRange: r,
-		FullRange: ruleRange(ctx),
-		Parent:    c.currentObj,
-		Children:  make(map[string]*Symbol),
+		Name:         name,
+		Kind:         SymbolKindTemplate,
+		URI:          c.fileSymbols.URI,
+		NameRange:    r,
+		FullRange:    ruleRange(ctx),
+		Parent:       c.currentObj,
+		Children:     make(map[string]*Symbol),
+		IsDefinition: true,
 	}
-	c.currentScope.Symbols[name] = sym
-	if c.currentObj != nil {
-		c.currentObj.Children[name] = sym
+	if name != "" {
+		c.currentScope.Symbols[name] = sym
+		if c.currentObj != nil {
+			c.currentObj.Children[name] = sym
+		}
 	}
 
 	scope := &Scope{
@@ -358,20 +447,20 @@ func (c *symbolCollector) EnterObject_decl(
 	ctx *dmlex.Object_declContext,
 ) {
 	name, r := extractObjident(ctx.Objident())
-	if name == "" {
-		return
-	}
 	sym := &Symbol{
-		Name:      name,
-		Kind:      SymbolKindObject,
-		URI:       c.fileSymbols.URI,
-		NameRange: r,
-		FullRange: ruleRange(ctx),
-		Parent:    c.parentObj(),
-		Children:  make(map[string]*Symbol),
+		Name:         name,
+		Kind:         SymbolKindObject,
+		URI:          c.fileSymbols.URI,
+		NameRange:    r,
+		FullRange:    ruleRange(ctx),
+		Parent:       c.parentObj(),
+		Children:     make(map[string]*Symbol),
+		IsDefinition: true,
 	}
-	c.currentScope.Symbols[name] = sym
-	c.attachToObjOrDevice(name, sym)
+	if name != "" {
+		c.currentScope.Symbols[name] = sym
+		c.attachToObjOrDevice(name, sym)
+	}
 
 	scope := &Scope{
 		Kind:    ScopeObject,
@@ -428,15 +517,18 @@ func (c *symbolCollector) EnterMethodUnifiedDeclaration(
 	if name == "" {
 		return
 	}
+	isAbstract := ctx.MethodQualifiers() != nil &&
+		ctx.MethodQualifiers().SHARED() != nil
 	r := ruleRange(ctx.Objident())
 	sym := &Symbol{
-		Name:      name,
-		Kind:      SymbolKindMethod,
-		URI:       c.fileSymbols.URI,
-		NameRange: r,
-		FullRange: ruleRange(ctx),
-		Parent:    c.parentObj(),
-		Children:  make(map[string]*Symbol),
+		Name:       name,
+		Kind:       SymbolKindMethod,
+		URI:        c.fileSymbols.URI,
+		NameRange:  r,
+		FullRange:  ruleRange(ctx),
+		Parent:     c.parentObj(),
+		Children:   make(map[string]*Symbol),
+		IsAbstract: isAbstract,
 	}
 	c.currentScope.Symbols[name] = sym
 	c.attachToObjOrDevice(name, sym)
@@ -445,25 +537,26 @@ func (c *symbolCollector) EnterMethodUnifiedDeclaration(
 func (c *symbolCollector) EnterMethodUnifiedDefinition(
 	ctx *dmlex.MethodUnifiedDefinitionContext,
 ) {
-	if ctx.Objident() == nil {
-		return
+	name := ""
+	var r protocol.Range
+	if ctx.Objident() != nil {
+		name = dmlex.MethodName(ctx)
+		r = ruleRange(ctx.Objident())
 	}
-	name := dmlex.MethodName(ctx)
-	if name == "" {
-		return
-	}
-	r := ruleRange(ctx.Objident())
 	sym := &Symbol{
-		Name:      name,
-		Kind:      SymbolKindMethod,
-		URI:       c.fileSymbols.URI,
-		NameRange: r,
-		FullRange: ruleRange(ctx),
-		Parent:    c.parentObj(),
-		Children:  make(map[string]*Symbol),
+		Name:         name,
+		Kind:         SymbolKindMethod,
+		URI:          c.fileSymbols.URI,
+		NameRange:    r,
+		FullRange:    ruleRange(ctx),
+		Parent:       c.parentObj(),
+		Children:     make(map[string]*Symbol),
+		IsDefinition: true,
 	}
-	c.currentScope.Symbols[name] = sym
-	c.attachToObjOrDevice(name, sym)
+	if name != "" {
+		c.currentScope.Symbols[name] = sym
+		c.attachToObjOrDevice(name, sym)
+	}
 
 	scope := &Scope{
 		Kind:    ScopeMethod,
@@ -476,17 +569,16 @@ func (c *symbolCollector) EnterMethodUnifiedDefinition(
 		if outParam == nil {
 			continue
 		}
-		if q := outParam.Cdecl_qualifier_ident_array_func(); q != nil {
-			outName, outRange := findIdentInTree(q)
-			if outName != "" && outName != "_" {
-				scope.Symbols[outName] = &Symbol{
-					Name:      outName,
-					Kind:      SymbolKindVariable,
-					URI:       c.fileSymbols.URI,
-					NameRange: outRange,
-					FullRange: ruleRange(outParam),
-					Parent:    sym,
-				}
+		outName, outRange := findCdeclIdent(outParam)
+		if outName != "" && outName != "_" {
+			scope.Symbols[outName] = &Symbol{
+				Name:      outName,
+				Kind:      SymbolKindParameter,
+				URI:       c.fileSymbols.URI,
+				NameRange: outRange,
+				FullRange: ruleRange(outParam),
+				Parent:    sym,
+				IsConst:   isConstCdecl(outParam),
 			}
 		}
 	}
@@ -513,23 +605,24 @@ func (c *symbolCollector) EnterCdeclOrInline(
 	}
 	name := ""
 	var r protocol.Range
+	var isConst bool
 	if ctx.Ident() != nil {
 		name = ctx.Ident().GetText()
 		r = ruleRange(ctx.Ident())
 	} else if ctx.Cdecl() != nil {
 		cdecl := ctx.Cdecl()
-		if q := cdecl.Cdecl_qualifier_ident_array_func(); q != nil {
-			name, r = findIdentInTree(q)
-		}
+		isConst = isConstCdecl(cdecl)
+		name, r = findCdeclIdent(cdecl)
 	}
 	if name != "" && name != "_" {
 		paramSym := &Symbol{
 			Name:      name,
-			Kind:      SymbolKindVariable,
+			Kind:      SymbolKindParameter,
 			URI:       c.fileSymbols.URI,
 			NameRange: r,
 			FullRange: ruleRange(ctx),
 			Parent:    c.currentScope.Owner,
+			IsConst:   isConst,
 		}
 		c.currentScope.Symbols[name] = paramSym
 	}
@@ -541,6 +634,8 @@ func (c *symbolCollector) extractCvarSymbols(
 	fullRange protocol.Range,
 	parent *Symbol,
 	attachToObj bool,
+	isStatic bool,
+	isDefinition bool,
 ) {
 	if c.currentScope == nil || cvar == nil {
 		return
@@ -549,21 +644,22 @@ func (c *symbolCollector) extractCvarSymbols(
 		if cd == nil {
 			return
 		}
-		q := cd.Cdecl_qualifier_ident_array_func()
-		if q == nil {
-			return
-		}
-		name, r := findIdentInTree(q)
+		name, r := findCdeclIdent(cd)
 		if name == "" || name == "_" {
 			return
 		}
+		q := cd.Cdecl_qualifier_ident_array_func()
 		sym := &Symbol{
-			Name:      name,
-			Kind:      kind,
-			URI:       c.fileSymbols.URI,
-			NameRange: r,
-			FullRange: fullRange,
-			Parent:    parent,
+			Name:         name,
+			Kind:         kind,
+			URI:          c.fileSymbols.URI,
+			NameRange:    r,
+			FullRange:    fullRange,
+			Parent:       parent,
+			IsConst:      isConstCdecl(cd),
+			IsStatic:     isStatic,
+			IsFunc:       isDirectFuncCdecl(q),
+			IsDefinition: isDefinition,
 		}
 		c.currentScope.Symbols[name] = sym
 		if attachToObj {
@@ -579,18 +675,35 @@ func (c *symbolCollector) extractCvarSymbols(
 	}
 }
 
-func (c *symbolCollector) EnterVariableStatement(
-	ctx *dmlex.VariableStatementContext,
+func (c *symbolCollector) EnterVariableDecl(
+	ctx *dmlex.VariableDeclContext,
 ) {
-	if c.currentScope == nil || ctx.VariableDecl() == nil {
+	if c.currentScope == nil || ctx.CvarDecl() == nil {
 		return
 	}
+	kind := SymbolKindVariable
+	isStatic := false
+	if lk := ctx.Local_decl_kind(); lk != nil {
+		switch {
+		case lk.SESSION() != nil:
+			kind = SymbolKindSession
+			isStatic = true
+		case lk.SAVED() != nil:
+			kind = SymbolKindSaved
+			isStatic = true
+		case lk.STATIC() != nil:
+			isStatic = true
+		}
+	}
+	isDef := ctx.CvarDecl().ASSIGN() != nil
 	c.extractCvarSymbols(
-		ctx.VariableDecl().CvarDecl(),
-		SymbolKindVariable,
+		ctx.CvarDecl(),
+		kind,
 		ruleRange(ctx),
 		c.currentScope.Owner,
 		false,
+		isStatic,
+		isDef,
 	)
 }
 
@@ -601,12 +714,15 @@ func (c *symbolCollector) EnterSessionOrSavedDecl(
 	if gk := ctx.Global_decl_kind(); gk != nil && gk.SAVED() != nil {
 		kind = SymbolKindSaved
 	}
+	isDef := ctx.CvarDecl() != nil && ctx.CvarDecl().ASSIGN() != nil
 	c.extractCvarSymbols(
 		ctx.CvarDecl(),
 		kind,
 		ruleRange(ctx),
 		c.parentObj(),
 		true,
+		true,
+		isDef,
 	)
 }
 
@@ -634,13 +750,16 @@ func (c *symbolCollector) EnterParam(ctx *dmlex.ParamContext) {
 	if name == "" {
 		return
 	}
+	isDef := ctx.ASSIGN() != nil || ctx.NEW_ASSIGN() != nil ||
+		ctx.DEFAULT() != nil || ctx.DEFAULT_NEW() != nil
 	paramSym := &Symbol{
-		Name:      name,
-		Kind:      SymbolKindParam,
-		URI:       c.fileSymbols.URI,
-		NameRange: r,
-		FullRange: ruleRange(ctx),
-		Parent:    c.parentObj(),
+		Name:         name,
+		Kind:         SymbolKindParam,
+		URI:          c.fileSymbols.URI,
+		NameRange:    r,
+		FullRange:    ruleRange(ctx),
+		Parent:       c.parentObj(),
+		IsDefinition: isDef,
 	}
 	c.currentScope.Symbols[name] = paramSym
 	c.attachToObjOrDevice(name, paramSym)
@@ -654,12 +773,14 @@ func (c *symbolCollector) EnterConstantStatement(
 		return
 	}
 	constSym := &Symbol{
-		Name:      name,
-		Kind:      SymbolKindConstant,
-		URI:       c.fileSymbols.URI,
-		NameRange: r,
-		FullRange: ruleRange(ctx),
-		Parent:    c.currentObj,
+		Name:         name,
+		Kind:         SymbolKindConstant,
+		URI:          c.fileSymbols.URI,
+		NameRange:    r,
+		FullRange:    ruleRange(ctx),
+		Parent:       c.currentObj,
+		IsConst:      true,
+		IsDefinition: true,
 	}
 	c.currentScope.Symbols[name] = constSym
 	if c.currentObj != nil {
@@ -673,20 +794,24 @@ func (c *symbolCollector) EnterTypedefStatement(
 	if ctx.Cdecl() == nil {
 		return
 	}
-	q := ctx.Cdecl().Cdecl_qualifier_ident_array_func()
-	if q == nil {
-		return
-	}
-	name, r := findIdentInTree(q)
+	name, r := findCdeclIdent(ctx.Cdecl())
 	if name == "" {
 		return
 	}
+	kind := SymbolKindTypedef
+	if isStructLikeBasetype(ctx.Cdecl().Basetype()) {
+		kind = SymbolKindStruct
+	}
+	q := ctx.Cdecl().Cdecl_qualifier_ident_array_func()
 	typeSym := &Symbol{
-		Name:      name,
-		Kind:      SymbolKindTypedef,
-		URI:       c.fileSymbols.URI,
-		NameRange: r,
-		FullRange: ruleRange(ctx),
+		Name:         name,
+		Kind:         kind,
+		URI:          c.fileSymbols.URI,
+		NameRange:    r,
+		FullRange:    ruleRange(ctx),
+		IsConst:      isConstCdecl(ctx.Cdecl()),
+		IsFunc:       isDirectFuncCdecl(q),
+		IsDefinition: true,
 	}
 	c.currentScope.Symbols[name] = typeSym
 }
@@ -697,24 +822,26 @@ func (c *symbolCollector) EnterExternStatement(
 	if ctx.Cdecl() == nil {
 		return
 	}
-	q := ctx.Cdecl().Cdecl_qualifier_ident_array_func()
-	if q == nil {
-		return
-	}
-	name, r := findIdentInTree(q)
+	name, r := findCdeclIdent(ctx.Cdecl())
 	if name == "" {
 		return
 	}
 	kind := SymbolKindExtern
 	if ctx.TYPEDEF() != nil {
 		kind = SymbolKindTypedef
+		if isStructLikeBasetype(ctx.Cdecl().Basetype()) {
+			kind = SymbolKindStruct
+		}
 	}
+	q := ctx.Cdecl().Cdecl_qualifier_ident_array_func()
 	extSym := &Symbol{
 		Name:      name,
 		Kind:      kind,
 		URI:       c.fileSymbols.URI,
 		NameRange: r,
 		FullRange: ruleRange(ctx),
+		IsConst:   isConstCdecl(ctx.Cdecl()),
+		IsFunc:    isDirectFuncCdecl(q),
 	}
 	c.currentScope.Symbols[name] = extSym
 }
@@ -727,13 +854,238 @@ func (c *symbolCollector) EnterLogGroupStatement(
 		return
 	}
 	logSym := &Symbol{
-		Name:      name,
-		Kind:      SymbolKindLogGroup,
-		URI:       c.fileSymbols.URI,
-		NameRange: r,
-		FullRange: ruleRange(ctx),
+		Name:         name,
+		Kind:         SymbolKindLogGroup,
+		URI:          c.fileSymbols.URI,
+		NameRange:    r,
+		FullRange:    ruleRange(ctx),
+		IsDefinition: true,
 	}
 	c.currentScope.Symbols[name] = logSym
+}
+
+func (c *symbolCollector) EnterStruct(ctx *dmlex.StructContext) {
+	if c.currentScope == nil || ctx.Ident() == nil || ctx.LBRACE() == nil {
+		return
+	}
+	name, r := extractIdent(ctx.Ident())
+	if name == "" {
+		return
+	}
+	c.currentScope.Symbols[name] = &Symbol{
+		Name:         name,
+		Kind:         SymbolKindStruct,
+		URI:          c.fileSymbols.URI,
+		NameRange:    r,
+		FullRange:    ruleRange(ctx),
+		IsDefinition: true,
+	}
+}
+
+func (c *symbolCollector) EnterUnion(ctx *dmlex.UnionContext) {
+	if c.currentScope == nil || ctx.Ident() == nil || ctx.LBRACE() == nil {
+		return
+	}
+	name, r := extractIdent(ctx.Ident())
+	if name == "" {
+		return
+	}
+	c.currentScope.Symbols[name] = &Symbol{
+		Name:         name,
+		Kind:         SymbolKindStruct,
+		URI:          c.fileSymbols.URI,
+		NameRange:    r,
+		FullRange:    ruleRange(ctx),
+		IsDefinition: true,
+	}
+}
+
+func (c *symbolCollector) EnterArraydef(ctx *dmlex.ArraydefContext) {
+	if c.currentScope == nil || ctx.Ident() == nil {
+		return
+	}
+	name, r := extractIdent(ctx.Ident())
+	if name == "" || name == "_" {
+		return
+	}
+	c.currentScope.Symbols[name] = &Symbol{
+		Name:         name,
+		Kind:         SymbolKindVariable,
+		URI:          c.fileSymbols.URI,
+		NameRange:    r,
+		FullRange:    ruleRange(ctx.Ident()),
+		Parent:       c.parentObj(),
+		IsDefinition: true,
+	}
+}
+
+func (c *symbolCollector) EnterForLoopStatement(
+	ctx *dmlex.ForLoopStatementContext,
+) {
+	if c.currentScope == nil {
+		return
+	}
+	scope := &Scope{
+		Kind:    ScopeBlock,
+		Range:   ruleRange(ctx),
+		Parent:  c.currentScope,
+		Owner:   c.currentScope.Owner,
+		Symbols: make(map[string]*Symbol),
+	}
+	c.currentScope.Children = append(c.currentScope.Children, scope)
+	c.currentScope = scope
+}
+
+func (c *symbolCollector) ExitForLoopStatement(
+	_ *dmlex.ForLoopStatementContext,
+) {
+	if c.currentScope != nil && c.currentScope.Parent != nil {
+		c.currentScope = c.currentScope.Parent
+	}
+}
+
+func (c *symbolCollector) EnterForeachStatement(
+	ctx *dmlex.ForeachStatementContext,
+) {
+	if c.currentScope == nil {
+		return
+	}
+	scopeRange := ruleRange(ctx)
+	if ctx.LoopStatement() != nil {
+		scopeRange = ruleRange(ctx.LoopStatement())
+	}
+	scope := &Scope{
+		Kind:    ScopeBlock,
+		Range:   scopeRange,
+		Parent:  c.currentScope,
+		Owner:   c.currentScope.Owner,
+		Symbols: make(map[string]*Symbol),
+	}
+	name, r := extractIdent(ctx.Ident())
+	if name != "" && name != "_" {
+		scope.Symbols[name] = &Symbol{
+			Name:         name,
+			Kind:         SymbolKindVariable,
+			URI:          c.fileSymbols.URI,
+			NameRange:    r,
+			FullRange:    ruleRange(ctx),
+			Parent:       c.currentScope.Owner,
+			IsDefinition: true,
+		}
+	}
+	c.currentScope.Children = append(c.currentScope.Children, scope)
+	c.currentScope = scope
+}
+
+func (c *symbolCollector) ExitForeachStatement(
+	_ *dmlex.ForeachStatementContext,
+) {
+	if c.currentScope != nil && c.currentScope.Parent != nil {
+		c.currentScope = c.currentScope.Parent
+	}
+}
+
+func (c *symbolCollector) EnterSelectStatement(
+	ctx *dmlex.SelectStatementContext,
+) {
+	if c.currentScope == nil {
+		return
+	}
+	scopeRange := ruleRange(ctx)
+	switch {
+	case ctx.WHERE() != nil:
+		scopeRange.Start = tokenRange(ctx.WHERE().GetSymbol()).Start
+	case ctx.ConditionExpression() != nil:
+		scopeRange.Start = ruleRange(ctx.ConditionExpression()).Start
+	}
+	if ctx.LoopStatement() != nil {
+		scopeRange.End = ruleRange(ctx.LoopStatement()).End
+	}
+	scope := &Scope{
+		Kind:    ScopeBlock,
+		Range:   scopeRange,
+		Parent:  c.currentScope,
+		Owner:   c.currentScope.Owner,
+		Symbols: make(map[string]*Symbol),
+	}
+	name, r := extractIdent(ctx.Ident())
+	if name != "" && name != "_" {
+		scope.Symbols[name] = &Symbol{
+			Name:         name,
+			Kind:         SymbolKindVariable,
+			URI:          c.fileSymbols.URI,
+			NameRange:    r,
+			FullRange:    ruleRange(ctx),
+			Parent:       c.currentScope.Owner,
+			IsDefinition: true,
+		}
+	}
+	c.currentScope.Children = append(c.currentScope.Children, scope)
+	c.currentScope = scope
+}
+
+func (c *symbolCollector) ExitSelectStatement(
+	_ *dmlex.SelectStatementContext,
+) {
+	if c.currentScope != nil && c.currentScope.Parent != nil {
+		c.currentScope = c.currentScope.Parent
+	}
+}
+
+func (c *symbolCollector) EnterAfterStatement(
+	ctx *dmlex.AfterStatementContext,
+) {
+	if c.currentScope == nil {
+		return
+	}
+	cond := ctx.AfterDelayCondition()
+	if cond == nil || cond.ARROW() == nil {
+		return
+	}
+	scope := &Scope{
+		Kind:    ScopeBlock,
+		Parent:  c.currentScope,
+		Owner:   c.currentScope.Owner,
+		Symbols: make(map[string]*Symbol),
+		Range: protocol.Range{
+			Start: tokenRange(cond.ARROW().GetSymbol()).Start,
+			End:   ruleRange(ctx).End,
+		},
+	}
+	registerParam := func(id dmlex.IIdentContext) {
+		name, r := extractIdent(id)
+		if name == "" || name == "_" {
+			return
+		}
+		scope.Symbols[name] = &Symbol{
+			Name:      name,
+			Kind:      SymbolKindParameter,
+			URI:       c.fileSymbols.URI,
+			NameRange: r,
+			FullRange: r,
+			Parent:    c.currentScope.Owner,
+		}
+	}
+	registerParam(cond.Ident())
+	if cond.IdentList() != nil {
+		for _, id := range cond.IdentList().AllIdent() {
+			registerParam(id)
+		}
+	}
+	c.currentScope.Children = append(c.currentScope.Children, scope)
+	c.currentScope = scope
+}
+
+func (c *symbolCollector) ExitAfterStatement(
+	ctx *dmlex.AfterStatementContext,
+) {
+	cond := ctx.AfterDelayCondition()
+	if cond == nil || cond.ARROW() == nil {
+		return
+	}
+	if c.currentScope != nil && c.currentScope.Parent != nil {
+		c.currentScope = c.currentScope.Parent
+	}
 }
 
 // ExtractFileSymbols builds the symbol hierarchy and scopes from an AST.
@@ -758,4 +1110,31 @@ func ExtractFileSymbols(docURI uri.URI, tree antlr.ParseTree) *FileSymbols {
 	}
 	antlr.ParseTreeWalkerDefault.Walk(collector, tree)
 	return fs
+}
+
+// DeviceOrGlobalSymbol returns DeviceSymbol if present, or creates a synthetic
+// device symbol representing the global scope and device templates for files
+// that omit a 'device <name>;' declaration.
+func (fs *FileSymbols) DeviceOrGlobalSymbol() *Symbol {
+	if fs == nil {
+		return nil
+	}
+	if fs.DeviceSymbol != nil {
+		return fs.DeviceSymbol
+	}
+	sym := &Symbol{
+		Name:      "dev",
+		Kind:      SymbolKindObject,
+		URI:       fs.URI,
+		Children:  make(map[string]*Symbol),
+		Templates: fs.DeviceTemplates,
+	}
+	if fs.GlobalScope != nil {
+		for name, s := range fs.GlobalScope.Symbols {
+			if isDeviceMemberKind(s.Kind) {
+				sym.Children[name] = s
+			}
+		}
+	}
+	return sym
 }
