@@ -35,10 +35,10 @@ func NewFilter(opts ...Option) (Filter, error) {
 			opt(&cfg)
 		}
 	}
-	return newFilterFromConfig(&cfg)
+	return newFilterFromConfig(&cfg.filterCfg)
 }
 
-func newFilterFromConfig(cfg *config) (*regexFilter, error) {
+func newFilterFromConfig(cfg *filterConfig) (*regexFilter, error) {
 	var err error
 	var incRe, excRe, extRe, forceRe *regexp.Regexp
 

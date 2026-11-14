@@ -5,17 +5,17 @@ package lookup
 
 import "time"
 
-type config struct {
-	cache         Cache
-	filter        Filter
-	ignoreMatcher IgnoreMatcher
-
+type filterConfig struct {
+	fsys                 FileSystem
 	includePattern       string
 	excludePattern       string
 	extendExcludePattern string
 	forceExcludePattern  string
-	ignoreFiles          []string
+}
 
+type cacheConfig struct {
+	fsys             FileSystem
+	clock            Clock
 	vcsMarkers       []string
 	stopAtVCSRoot    bool
 	stopAtMountPoint bool
@@ -28,23 +28,39 @@ type config struct {
 	cacheTTL         time.Duration
 	strictSecurity   bool
 	onSkip           SkipCallback
-	onIgnore         IgnoreCallback
-	fsys             FileSystem
-	clock            Clock
+}
+
+type config struct {
+	cache         Cache
+	filter        Filter
+	ignoreMatcher IgnoreMatcher
+
+	filterCfg filterConfig
+	cacheCfg  cacheConfig
+
+	ignoreFiles []string
+	onIgnore    IgnoreCallback
 }
 
 func defaultConfig() config {
+	fsys := NewOSFileSystem()
+	clock := realClock{}
 	return config{
-		vcsMarkers:       []string{VCSMarkerGit, VCSMarkerHg},
-		stopAtVCSRoot:    true,
-		stopAtMountPoint: true,
-		verifyOwnership:  true,
-		allowSymlinks:    true,
-		allowSymlinkEsc:  false,
-		maxDepth:         DefaultMaxDepth,
-		maxFileSize:      DefaultMaxFileSize,
-		fsys:             NewOSFileSystem(),
-		clock:            realClock{},
+		filterCfg: filterConfig{
+			fsys: fsys,
+		},
+		cacheCfg: cacheConfig{
+			fsys:             fsys,
+			clock:            clock,
+			vcsMarkers:       []string{VCSMarkerGit, VCSMarkerHg},
+			stopAtVCSRoot:    true,
+			stopAtMountPoint: true,
+			verifyOwnership:  true,
+			allowSymlinks:    true,
+			allowSymlinkEsc:  false,
+			maxDepth:         DefaultMaxDepth,
+			maxFileSize:      DefaultMaxFileSize,
+		},
 	}
 }
 
@@ -84,28 +100,28 @@ func WithIgnoreFiles(names ...string) Option {
 // WithInclude sets the regular expression matching paths to include.
 func WithInclude(pattern string) Option {
 	return func(c *config) {
-		c.includePattern = pattern
+		c.filterCfg.includePattern = pattern
 	}
 }
 
 // WithExclude sets the regular expression matching paths to exclude.
 func WithExclude(pattern string) Option {
 	return func(c *config) {
-		c.excludePattern = pattern
+		c.filterCfg.excludePattern = pattern
 	}
 }
 
 // WithExtendExclude sets an additional regular expression matching paths to exclude.
 func WithExtendExclude(pattern string) Option {
 	return func(c *config) {
-		c.extendExcludePattern = pattern
+		c.filterCfg.extendExcludePattern = pattern
 	}
 }
 
 // WithForceExclude sets the regular expression matching paths to forcibly exclude.
 func WithForceExclude(pattern string) Option {
 	return func(c *config) {
-		c.forceExcludePattern = pattern
+		c.filterCfg.forceExcludePattern = pattern
 	}
 }
 
@@ -118,49 +134,49 @@ func WithVCSMarkers(markers ...string) Option {
 				filtered = append(filtered, m)
 			}
 		}
-		c.vcsMarkers = filtered
+		c.cacheCfg.vcsMarkers = filtered
 	}
 }
 
 // WithStopAtVCSRoot controls whether upward traversal stops at VCS roots.
 func WithStopAtVCSRoot(enabled bool) Option {
 	return func(c *config) {
-		c.stopAtVCSRoot = enabled
+		c.cacheCfg.stopAtVCSRoot = enabled
 	}
 }
 
 // WithStopAtMountPoint controls whether upward traversal stops at mount boundaries.
 func WithStopAtMountPoint(enabled bool) Option {
 	return func(c *config) {
-		c.stopAtMountPoint = enabled
+		c.cacheCfg.stopAtMountPoint = enabled
 	}
 }
 
 // WithVerifyOwnership controls whether upward traversal verifies directory UIDs.
 func WithVerifyOwnership(enabled bool) Option {
 	return func(c *config) {
-		c.verifyOwnership = enabled
+		c.cacheCfg.verifyOwnership = enabled
 	}
 }
 
 // WithAllowSymlinks controls whether symlinked utility files are followed.
 func WithAllowSymlinks(allow bool) Option {
 	return func(c *config) {
-		c.allowSymlinks = allow
+		c.cacheCfg.allowSymlinks = allow
 	}
 }
 
 // WithAllowSymlinkEscape controls whether symlinks may resolve outside the boundary root.
 func WithAllowSymlinkEscape(allow bool) Option {
 	return func(c *config) {
-		c.allowSymlinkEsc = allow
+		c.cacheCfg.allowSymlinkEsc = allow
 	}
 }
 
 // WithCeilingDirs configures directory paths where upward traversal must stop.
 func WithCeilingDirs(dirs ...string) Option {
 	return func(c *config) {
-		c.ceilingDirs = append([]string(nil), dirs...)
+		c.cacheCfg.ceilingDirs = append([]string(nil), dirs...)
 	}
 }
 
@@ -168,7 +184,7 @@ func WithCeilingDirs(dirs ...string) Option {
 func WithMaxDepth(depth int) Option {
 	return func(c *config) {
 		if depth >= 0 {
-			c.maxDepth = depth
+			c.cacheCfg.maxDepth = depth
 		}
 	}
 }
@@ -177,7 +193,7 @@ func WithMaxDepth(depth int) Option {
 // Non-positive values disable the size limit.
 func WithMaxFileSize(maxBytes int64) Option {
 	return func(c *config) {
-		c.maxFileSize = maxBytes
+		c.cacheCfg.maxFileSize = maxBytes
 	}
 }
 
@@ -186,7 +202,7 @@ func WithMaxFileSize(maxBytes int64) Option {
 func WithCacheTTL(ttl time.Duration) Option {
 	return func(c *config) {
 		if ttl >= 0 {
-			c.cacheTTL = ttl
+			c.cacheCfg.cacheTTL = ttl
 		}
 	}
 }
@@ -195,14 +211,14 @@ func WithCacheTTL(ttl time.Duration) Option {
 // return a [*SecurityError] instead of skipping the file.
 func WithStrictSecurity(strict bool) Option {
 	return func(c *config) {
-		c.strictSecurity = strict
+		c.cacheCfg.strictSecurity = strict
 	}
 }
 
 // WithOnSkip registers a callback notified whenever a candidate is skipped.
 func WithOnSkip(cb SkipCallback) Option {
 	return func(c *config) {
-		c.onSkip = cb
+		c.cacheCfg.onSkip = cb
 	}
 }
 
@@ -217,7 +233,8 @@ func WithOnIgnore(cb IgnoreCallback) Option {
 func WithFileSystem(fsys FileSystem) Option {
 	return func(c *config) {
 		if fsys != nil {
-			c.fsys = fsys
+			c.filterCfg.fsys = fsys
+			c.cacheCfg.fsys = fsys
 		}
 	}
 }
@@ -226,7 +243,7 @@ func WithFileSystem(fsys FileSystem) Option {
 func WithClock(clock Clock) Option {
 	return func(c *config) {
 		if clock != nil {
-			c.clock = clock
+			c.cacheCfg.clock = clock
 		}
 	}
 }

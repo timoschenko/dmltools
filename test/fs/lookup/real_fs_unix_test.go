@@ -3,7 +3,7 @@
 
 //go:build unix
 
-package test_fs
+package test_lookup
 
 import (
 	"errors"
