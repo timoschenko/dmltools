@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) 2026 Sergei Timoshchenko
 
-package test_fs
+package test_lookup
 
 import (
 	"errors"

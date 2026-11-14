@@ -88,33 +88,44 @@ type CLIConfig struct {
 
 	// CodeSet indicates whether -c or --code was explicitly provided
 	CodeSet bool
+
+	Device          string
+	DeviceSet       bool
+	FollowAllImport bool
+	IncludeSet      bool
+
+	DmlcFlags       []string
+	DmlcIncludeDirs []string
+	DmlcFlagsErr    string
 }
 
 var implementedFlags = map[string]bool{
-	"W":              true,
-	"c":              true,
-	"check":          true,
-	"code":           true,
-	"color":          true,
-	"exclude":        true,
-	"extend-exclude": true,
-	"fast":           true,
-	"force-exclude":  true,
-	"h":              true,
-	"help":           true,
-	"include":        true,
-	"l":              true,
-	"line-length":    true,
-	"nerd-stats":     true,
-	"no-color":       true,
-	"q":              true,
-	"quiet":          true,
-	"safe":           true,
-	"stdin-filename": true,
-	"v":              true,
-	"verbose":        true,
-	"version":        true,
-	"workers":        true,
+	"W":                 true,
+	"c":                 true,
+	"check":             true,
+	"code":              true,
+	"color":             true,
+	"device":            true,
+	"exclude":           true,
+	"extend-exclude":    true,
+	"fast":              true,
+	"follow-all-import": true,
+	"force-exclude":     true,
+	"h":                 true,
+	"help":              true,
+	"include":           true,
+	"l":                 true,
+	"line-length":       true,
+	"nerd-stats":        true,
+	"no-color":          true,
+	"q":                 true,
+	"quiet":             true,
+	"safe":              true,
+	"stdin-filename":    true,
+	"v":                 true,
+	"verbose":           true,
+	"version":           true,
+	"workers":           true,
 }
 
 func isFlagImplemented(flagName string) bool {
@@ -173,6 +184,10 @@ func printUsage(w io.Writer) {
 
 Options:
   -c, --code TEXT                 Format the code passed in as a string.
+  --device FILE                   Format device DML and imported files
+                                  (pass dmlc flags after '--').
+  --follow-all-import             Fail if an imported file is missing
+                                  (requires --device).
   -l, --line-length INTEGER       How many characters per line to allow.
                                   [default: %d]
   --check                         Don't write the files back, just return the
@@ -449,15 +464,47 @@ func parseArgs(args []string, stderr io.Writer) (*CLIConfig, error) {
 		"",
 		"Write memory profile to file.",
 	)
+	fs.StringVar(
+		&cfg.Device,
+		"device",
+		"",
+		"Format device DML file and its imported files.",
+	)
+	fs.BoolVar(
+		&cfg.FollowAllImport,
+		"follow-all-import",
+		false,
+		"Fail if an imported file cannot be found (requires --device).",
+	)
 
-	if err := fs.Parse(args); err != nil {
+	dashIdx := -1
+	for i, arg := range args {
+		if arg == "--" {
+			dashIdx = i
+			break
+		}
+	}
+
+	parseTarget := args
+	var afterDash []string
+	if dashIdx >= 0 {
+		parseTarget = args[:dashIdx]
+		afterDash = args[dashIdx+1:]
+	}
+
+	if err := fs.Parse(parseTarget); err != nil {
 		return nil, err
 	}
 
 	fs.Visit(func(f *flag.Flag) {
 		cfg.ExplicitFlags = append(cfg.ExplicitFlags, f.Name)
-		if f.Name == "c" || f.Name == "code" {
+		switch f.Name {
+		case "c", "code":
 			cfg.CodeSet = true
+		case "device":
+			cfg.DeviceSet = true
+		case "include":
+			cfg.IncludeSet = true
 		}
 	})
 
@@ -499,7 +546,7 @@ func parseArgs(args []string, stderr io.Writer) (*CLIConfig, error) {
 	// Fast / safe toggles: track ordering so the last specified flag wins.
 	lastSafeIdx := -1
 	lastFastIdx := -1
-	for i, arg := range args {
+	for i, arg := range parseTarget {
 		switch arg {
 		case "--safe", "-safe":
 			lastSafeIdx = i
@@ -522,7 +569,7 @@ func parseArgs(args []string, stderr io.Writer) (*CLIConfig, error) {
 	// Color toggles: track ordering so the last specified flag wins.
 	lastColorIdx := -1
 	lastNoColorIdx := -1
-	for i, arg := range args {
+	for i, arg := range parseTarget {
 		switch arg {
 		case "--color", "-color":
 			lastColorIdx = i
@@ -549,6 +596,15 @@ func parseArgs(args []string, stderr io.Writer) (*CLIConfig, error) {
 	}
 
 	cfg.Sources = append(cfg.Sources, fs.Args()...)
+
+	if cfg.DeviceSet {
+		if len(afterDash) > 0 {
+			cfg.DmlcFlags = afterDash
+			cfg.DmlcIncludeDirs, cfg.DmlcFlagsErr = parseDmlcFlags(afterDash)
+		}
+	} else if dashIdx >= 0 {
+		cfg.Sources = append(cfg.Sources, afterDash...)
+	}
 
 	return cfg, nil
 }

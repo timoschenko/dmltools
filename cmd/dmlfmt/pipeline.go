@@ -57,6 +57,10 @@ type OutputJob struct {
 	WouldReformat bool
 	Ignored       bool
 	IgnoreReason  string
+	HasDeviceTag  bool
+	DeviceLine    int
+	DeviceColumn  int
+	Imports       []ImportRef
 }
 
 // parseDmlStream parses input into a DmlFile and AST tree using an ErrorListener configured for path.
@@ -264,6 +268,8 @@ func processFormattingJob(
 		}
 	}
 
+	hasDevice, devLine, devCol, imports := extractDmlFileMeta(tree)
+
 	return OutputJob{
 		Path:          job.Path,
 		OrigMode:      job.OrigMode,
@@ -271,6 +277,10 @@ func processFormattingJob(
 		OutputHash:    outputHash,
 		OutputBuffer:  outBuf.Bytes(),
 		WouldReformat: wouldReformat,
+		HasDeviceTag:  hasDevice,
+		DeviceLine:    devLine,
+		DeviceColumn:  devCol,
+		Imports:       imports,
 	}
 }
 
@@ -337,12 +347,28 @@ func runPipeline(
 		})
 	}
 
+	var (
+		paths    []string
+		resolver *deviceImportResolver
+	)
 	startTime := time.Now()
-	paths, err := finder.Collect(cfg.Sources)
-	stats.RecordWalkIo(time.Since(startTime))
-	if err != nil {
-		ui.PrintError("Error: %v", err)
-		return ExitCodeInternalError
+	if cfg.DeviceSet {
+		var err error
+		resolver, err = newDeviceImportResolver(cfg, finder, ui)
+		stats.RecordWalkIo(time.Since(startTime))
+		if err != nil {
+			ui.PrintError("Error: %v", err)
+			return ExitCodeInternalError
+		}
+		paths = resolver.initialPaths()
+	} else {
+		var err error
+		paths, err = finder.Collect(cfg.Sources)
+		stats.RecordWalkIo(time.Since(startTime))
+		if err != nil {
+			ui.PrintError("Error: %v", err)
+			return ExitCodeInternalError
+		}
 	}
 	if len(paths) == 0 {
 		ui.PrintNoFiles()
@@ -388,6 +414,7 @@ func runPipeline(
 		pathIdx       int
 		nextJob       InputJob
 		hasPending    bool
+		inFlight      int
 		processClosed bool
 	)
 	writeOut := writeChan
@@ -419,7 +446,8 @@ func runPipeline(
 			hasPending = true
 		}
 
-		if !hasPending && pathIdx == len(paths) && !processClosed {
+		if !hasPending && pathIdx == len(paths) && inFlight == 0 &&
+			!processClosed {
 			close(processChan)
 			processClosed = true
 		}
@@ -435,6 +463,7 @@ func runPipeline(
 				writeOut = nil
 				continue
 			}
+			inFlight--
 			if job.SyntaxErrors {
 				hasErrors = true
 				report.IncrementFailed()
@@ -451,6 +480,12 @@ func runPipeline(
 				if job.IgnoreReason == "1.2" || job.IgnoreReason == "" {
 					report.IncrementIgnoredDml12()
 				}
+				continue
+			}
+			if cfg.DeviceSet &&
+				handleDeviceJobResult(&job, resolver, cfg, ui, &paths) {
+				hasErrors = true
+				report.IncrementFailed()
 				continue
 			}
 			if !job.WouldReformat {
@@ -475,6 +510,7 @@ func runPipeline(
 			}
 			report.IncrementReformatted()
 		case processIn <- nextJob:
+			inFlight++
 			hasPending = false
 			nextJob = InputJob{}
 		}

@@ -88,13 +88,50 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return ExitCodeInternalError
 	}
 
+	if cfg.DmlcFlagsErr != "" {
+		ui.PrintError("Error: %s", cfg.DmlcFlagsErr)
+		return ExitCodeInternalError
+	}
+
+	if cfg.FollowAllImport && !cfg.DeviceSet {
+		ui.PrintError(
+			"Error: '--follow-all-import' requires '--device'.",
+		)
+		ui.PrintErrorUsage()
+		return ExitCodeInternalError
+	}
+
+	if cfg.DeviceSet {
+		if cfg.Device == "" {
+			ui.PrintError(
+				"Error: '--device' requires a DML file path.",
+			)
+			ui.PrintErrorUsage()
+			return ExitCodeInternalError
+		}
+		if cfg.CodeSet {
+			ui.PrintError(
+				"'device' and 'code' cannot be passed simultaneously.",
+			)
+			ui.PrintErrorUsage()
+			return ExitCodeInternalError
+		}
+		if len(cfg.Sources) > 0 {
+			ui.PrintError(
+				"'SRC' and 'device' cannot be passed simultaneously.",
+			)
+			ui.PrintErrorUsage()
+			return ExitCodeInternalError
+		}
+	}
+
 	if cfg.CodeSet && len(cfg.Sources) > 0 {
 		ui.PrintError("'SRC' and 'code' cannot be passed simultaneously.")
 		ui.PrintErrorUsage()
 		return ExitCodeInternalError
 	}
 
-	if !cfg.CodeSet && len(cfg.Sources) == 0 {
+	if !cfg.CodeSet && !cfg.DeviceSet && len(cfg.Sources) == 0 {
 		ui.PrintNoSourcesError()
 		return ExitCodeInternalError
 	}
