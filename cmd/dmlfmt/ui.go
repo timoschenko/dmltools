@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/timoschenko/dmltools/pkg/dmlex"
+	"github.com/timoschenko/dmltools/pkg/fs/lookup"
 )
 
 // ANSI color escape codes
@@ -235,18 +236,26 @@ func (u *UI) WouldReformat(filename string) {
 
 // Ignored writes an ignored-file notice to stdout.
 func (u *UI) Ignored(filename, version string) {
+	if version != "" {
+		version = "dml " + version
+	}
+	u.IgnoredReason(filename, version)
+}
+
+// IgnoredReason writes an ignored notice with a reason to stdout.
+func (u *UI) IgnoredReason(filename, reason string) {
 	wr := u.out
 	var msg string
-	if version != "" {
+	if reason != "" {
 		if wr.IsColorEnabled() {
 			msg = fmt.Sprintf(
-				"%s %s (dml %s)\n",
+				"%s %s (%s)\n",
 				ansiBoldYellow+"ignored"+ansiReset,
 				ansiBold+filename+ansiReset,
-				version,
+				reason,
 			)
 		} else {
-			msg = fmt.Sprintf("ignored %s (dml %s)\n", filename, version)
+			msg = fmt.Sprintf("ignored %s (%s)\n", filename, reason)
 		}
 	} else {
 		if wr.IsColorEnabled() {
@@ -291,17 +300,23 @@ func (u *UI) Processing(path string) {
 
 // IgnoredFilter writes a filtered-out file or directory notice to stdout.
 func (u *UI) IgnoredFilter(path string, isDir bool, filterName string) {
+	reason := "regular expression"
+	if filterName == lookup.FileGitIgnore || filterName == lookup.FileIgnore {
+		reason = "file content"
+	}
 	if isDir {
 		u.Verbose(
-			"%s directory ignored: matches the %s regular expression\n",
+			"%s directory ignored: matches the %s %s\n",
 			path,
 			filterName,
+			reason,
 		)
 	} else {
 		u.Verbose(
-			"%s ignored: matches the %s regular expression\n",
+			"%s ignored: matches the %s %s\n",
 			path,
 			filterName,
+			reason,
 		)
 	}
 }

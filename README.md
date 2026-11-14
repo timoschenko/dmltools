@@ -14,7 +14,7 @@ including `dmlfmt` (an opinionated deterministic code formatter).
 
 ### Via `go install`
 
-With Go 1.23+ installed:
+With Go 1.27+ installed:
 
 ```bash
 # Install the dmlfmt code formatter

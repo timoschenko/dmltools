@@ -6,17 +6,19 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/timoschenko/dmltools/pkg/dmlex"
 	"github.com/timoschenko/dmltools/pkg/fs"
+	"github.com/timoschenko/dmltools/pkg/fs/lookup"
 	"github.com/timoschenko/dmltools/pkg/fs/stream"
 	"github.com/timoschenko/dmltools/pkg/printer"
 
@@ -272,6 +274,9 @@ func processFormattingJob(
 	}
 }
 
+// ErrFileTooLarge indicates a file exceeds the MaxFileSize limit.
+var ErrFileTooLarge = errors.New("file size exceeds 50 MiB limit")
+
 // readInputJob opens a file, reads its contents into a HashingStream, and closes
 // the file handle before returning.
 func readInputJob(path string, stats StatsCollector) (InputJob, error) {
@@ -294,12 +299,8 @@ func readInputJob(path string, stats StatsCollector) (InputJob, error) {
 			err,
 		)
 	}
-	if info.Size() >= math.MaxInt {
-		return InputJob{}, fmt.Errorf(
-			"file %s exceeds maximum supported size (%d bytes)",
-			path,
-			info.Size(),
-		)
+	if info.Size() > MaxFileSize {
+		return InputJob{}, ErrFileTooLarge
 	}
 
 	size := int(info.Size())
@@ -324,20 +325,20 @@ func readInputJob(path string, stats StatsCollector) (InputJob, error) {
 // and parallel processing (-W workers).
 func runPipeline(
 	cfg *CLIConfig,
-	collector *FileCollector,
+	finder lookup.Finder,
 	ui *UI,
 	stats StatsCollector,
 ) int {
-	// TODO: AI Slop
-
 	if cfg.Verbose {
-		collector.SetOnIgnore(func(path string, isDir bool, filterName string) {
-			ui.IgnoredFilter(path, isDir, filterName)
+		finder.SetOnIgnore(func(path string, isDir bool, filterName string) {
+			if isDir || strings.HasSuffix(path, ".dml") {
+				ui.IgnoredFilter(path, isDir, filterName)
+			}
 		})
 	}
 
 	startTime := time.Now()
-	paths, err := collector.Collect(cfg.Sources)
+	paths, err := finder.Collect(cfg.Sources)
 	stats.RecordWalkIo(time.Since(startTime))
 	if err != nil {
 		ui.PrintError("Error: %v", err)
@@ -400,6 +401,15 @@ func runPipeline(
 			}
 			job, readErr := readInputJob(path, stats)
 			if readErr != nil {
+				if errors.Is(readErr, ErrFileTooLarge) {
+					ui.IgnoredReason(
+						path,
+						readErr.Error(),
+					)
+					hasErrors = true
+					report.IncrementFailed()
+					continue
+				}
 				ui.PrintError("Error: %v", readErr)
 				hasErrors = true
 				report.IncrementFailed()

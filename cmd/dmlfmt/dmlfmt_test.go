@@ -2661,6 +2661,155 @@ func TestRun_Dml12_CheckStdin_Errors(t *testing.T) {
 	}
 }
 
+func TestRun_OversizedFile_Ignored(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "huge.dml")
+	f, err := os.Create(filepath.Clean(filePath))
+	if err != nil {
+		t.Fatalf("failed to create huge file: %v", err)
+	}
+	if err := f.Truncate(51 << 20); err != nil {
+		_ = f.Close()
+		t.Fatalf("failed to truncate huge file: %v", err)
+	}
+	_ = f.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{filePath}, &stdout, &stderr)
+	if code != ExitCodeInternalError {
+		t.Fatalf(
+			"expected ExitCodeInternalError (123), got %d (stderr: %s)",
+			code,
+			stderr.String(),
+		)
+	}
+	expectedMsg := fmt.Sprintf(
+		"ignored %s (file size exceeds 50 MiB limit)\n1 file failed to reformat.\n",
+		filePath,
+	)
+	if stdout.String() != expectedMsg {
+		t.Errorf("expected stdout %q, got %q", expectedMsg, stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("expected empty stderr, got %q", stderr.String())
+	}
+}
+
+func TestRun_OversizedFile_CheckMode(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "huge.dml")
+	f, err := os.Create(filepath.Clean(filePath))
+	if err != nil {
+		t.Fatalf("failed to create huge file: %v", err)
+	}
+	if err := f.Truncate(51 << 20); err != nil {
+		_ = f.Close()
+		t.Fatalf("failed to truncate huge file: %v", err)
+	}
+	_ = f.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--check", filePath}, &stdout, &stderr)
+	if code != ExitCodeInternalError {
+		t.Fatalf(
+			"expected ExitCodeInternalError (123), got %d (stderr: %s)",
+			code,
+			stderr.String(),
+		)
+	}
+	expectedMsg := fmt.Sprintf(
+		"ignored %s (file size exceeds 50 MiB limit)\n1 file would fail to reformat.\n",
+		filePath,
+	)
+	if stdout.String() != expectedMsg {
+		t.Errorf("expected stdout %q, got %q", expectedMsg, stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("expected empty stderr, got %q", stderr.String())
+	}
+}
+
+func TestRun_OversizedFile_MixedWithValid(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	hugePath := filepath.Join(tmpDir, "huge.dml")
+	f, err := os.Create(filepath.Clean(hugePath))
+	if err != nil {
+		t.Fatalf("failed to create huge file: %v", err)
+	}
+	if err := f.Truncate(51 << 20); err != nil {
+		_ = f.Close()
+		t.Fatalf("failed to truncate huge file: %v", err)
+	}
+	_ = f.Close()
+
+	validPath := filepath.Join(tmpDir, "valid.dml")
+	validContent := []byte("dml  1.4 ;\n\ndevice  dev ;\n")
+	if err := os.WriteFile(validPath, validContent, 0600); err != nil {
+		t.Fatalf("failed to write valid file: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{tmpDir}, &stdout, &stderr)
+	if code != ExitCodeInternalError {
+		t.Fatalf(
+			"expected ExitCodeInternalError (123), got %d (stderr: %s)",
+			code,
+			stderr.String(),
+		)
+	}
+	outStr := stdout.String()
+	expectedIgnored := fmt.Sprintf(
+		"ignored %s (file size exceeds 50 MiB limit)\n",
+		hugePath,
+	)
+	if !strings.Contains(outStr, expectedIgnored) {
+		t.Errorf(
+			"expected stdout to contain %q, got %q",
+			expectedIgnored,
+			outStr,
+		)
+	}
+	expectedReformatted := fmt.Sprintf(
+		"reformatted %s\n",
+		validPath,
+	)
+	if !strings.Contains(outStr, expectedReformatted) {
+		t.Errorf(
+			"expected stdout to contain %q, got %q",
+			expectedReformatted,
+			outStr,
+		)
+	}
+	if !strings.Contains(
+		outStr,
+		"1 file reformatted, 1 file failed to reformat.\n",
+	) {
+		t.Errorf("expected summary line in stdout, got %q", outStr)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("expected empty stderr, got %q", stderr.String())
+	}
+
+	afterValid, err := os.ReadFile(filepath.Clean(validPath))
+	if err != nil {
+		t.Fatalf("failed to read valid file: %v", err)
+	}
+	expectedValid := "dml 1.4;\n\ndevice dev;\n"
+	if string(afterValid) != expectedValid {
+		t.Errorf(
+			"expected valid file reformatted to %q, got %q",
+			expectedValid,
+			string(afterValid),
+		)
+	}
+}
+
 func TestRun_Quiet_Files(t *testing.T) {
 	t.Parallel()
 
@@ -3836,6 +3985,102 @@ func TestVerboseMode(t *testing.T) {
 			t.Errorf(
 				"expected stdout to contain report %q, got:\n%s",
 				expectedReport,
+				outStr,
+			)
+		}
+	})
+
+	t.Run("GitIgnoreAndIgnoreFile_Verbose", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		_ = os.Mkdir(filepath.Join(tmpDir, ".git"), 0750)
+		_ = os.WriteFile(
+			filepath.Join(tmpDir, ".gitignore"),
+			[]byte("git_skip.dml\ngit_ignored_dir/\nnotes.txt\n"),
+			0600,
+		)
+		_ = os.WriteFile(
+			filepath.Join(tmpDir, ".ignore"),
+			[]byte("dotignore_skip.dml\ndotignore_dir/\n"),
+			0600,
+		)
+
+		keepPath := filepath.Join(tmpDir, "keep.dml")
+		gitSkipPath := filepath.Join(tmpDir, "git_skip.dml")
+		gitDir := filepath.Join(tmpDir, "git_ignored_dir")
+		dotIgnoreSkipPath := filepath.Join(tmpDir, "dotignore_skip.dml")
+		dotIgnoreDir := filepath.Join(tmpDir, "dotignore_dir")
+		notesPath := filepath.Join(tmpDir, "notes.txt")
+
+		_ = os.Mkdir(gitDir, 0750)
+		_ = os.Mkdir(dotIgnoreDir, 0750)
+		_ = os.WriteFile(keepPath, []byte("dml 1.4;\ndevice keep;\n"), 0600)
+		_ = os.WriteFile(
+			gitSkipPath,
+			[]byte("dml 1.4;\ndevice gskip;\n"),
+			0600,
+		)
+		_ = os.WriteFile(
+			filepath.Join(gitDir, "inner.dml"),
+			[]byte("dml 1.4;\ndevice gdir;\n"),
+			0600,
+		)
+		_ = os.WriteFile(
+			dotIgnoreSkipPath,
+			[]byte("dml 1.4;\ndevice dskip;\n"),
+			0600,
+		)
+		_ = os.WriteFile(
+			filepath.Join(dotIgnoreDir, "inner.dml"),
+			[]byte("dml 1.4;\ndevice ddir;\n"),
+			0600,
+		)
+		_ = os.WriteFile(notesPath, []byte("ignored text"), 0600)
+
+		var stdout, stderr bytes.Buffer
+		args := []string{"-v", "--no-color", tmpDir}
+		code := run(args, &stdout, &stderr)
+		if code != ExitCodeOK {
+			t.Fatalf(
+				"expected ExitCodeOK (0), got %d (stderr: %s)",
+				code,
+				stderr.String(),
+			)
+		}
+
+		outStr := stdout.String()
+		expectedMsgs := []string{
+			fmt.Sprintf("Processing %s...\n", keepPath),
+			fmt.Sprintf(
+				"%s ignored: matches the .gitignore file content\n",
+				gitSkipPath,
+			),
+			fmt.Sprintf(
+				"%s directory ignored: matches the .gitignore file content\n",
+				gitDir,
+			),
+			fmt.Sprintf(
+				"%s ignored: matches the .ignore file content\n",
+				dotIgnoreSkipPath,
+			),
+			fmt.Sprintf(
+				"%s directory ignored: matches the .ignore file content\n",
+				dotIgnoreDir,
+			),
+			fmt.Sprintf("%s already well formatted, good job.\n", keepPath),
+		}
+		for _, want := range expectedMsgs {
+			if !strings.Contains(outStr, want) {
+				t.Errorf(
+					"expected stdout to contain %q, got:\n%s",
+					want,
+					outStr,
+				)
+			}
+		}
+
+		if strings.Contains(outStr, "notes.txt") {
+			t.Errorf(
+				"non-DML file notes.txt should not appear in verbose output, got:\n%s",
 				outStr,
 			)
 		}
