@@ -142,6 +142,7 @@ type FileEntry struct {
 	Tokens        *antlr.CommonTokenStream
 	Symbols       *FileSymbols
 	semanticSpans []semanticSpan
+	docSymbols    []protocol.DocumentSymbol
 	modTime       time.Time
 	lineOffsets   []int
 }
@@ -275,6 +276,7 @@ func (e *FileEntry) SetContent(newContent string) {
 	e.Tokens = nil
 	e.Symbols = nil
 	e.semanticSpans = nil
+	e.docSymbols = nil
 }
 
 type diskCacheEntry struct {
@@ -284,6 +286,7 @@ type diskCacheEntry struct {
 	tokens        *antlr.CommonTokenStream
 	symbols       *FileSymbols
 	semanticSpans []semanticSpan
+	docSymbols    []protocol.DocumentSymbol
 }
 
 // FsCache is a thread-safe in-memory file overlay cache implementing
@@ -598,6 +601,7 @@ func (c *FsCache) SetAST(pathOrURI string, tree antlr.ParseTree) error {
 	entry.Tokens = nil
 	entry.Symbols = nil
 	entry.semanticSpans = nil
+	entry.docSymbols = nil
 	return nil
 }
 
@@ -625,6 +629,7 @@ func (c *FsCache) SetASTIfMatch(
 	entry.Tokens = nil
 	entry.Symbols = nil
 	entry.semanticSpans = nil
+	entry.docSymbols = nil
 	return true
 }
 
@@ -651,6 +656,7 @@ func (c *FsCache) setParsedIfMatch(
 	entry.Tokens = tokens
 	entry.Symbols = nil
 	entry.semanticSpans = nil
+	entry.docSymbols = nil
 	return true
 }
 
@@ -754,26 +760,45 @@ func (c *FsCache) GetOrParse(
 	buf := stream.NewHashedBufferFromString(canonical, content)
 	hash := buf.Hash()
 
+	var tree antlr.ParseTree
+	var tokens *antlr.CommonTokenStream
+	var syms *FileSymbols
+	var spans []semanticSpan
+	var docSyms []protocol.DocumentSymbol
+
 	c.mu.RLock()
 	cached, ok := c.diskParsed[canonical]
 	c.mu.RUnlock()
-	if ok && cached.hash == hash && cached.ast != nil &&
-		cached.symbols != nil {
-		return cached.buf, cached.ast, cached.symbols, nil
+	if ok && cached.hash == hash {
+		if cached.ast != nil && cached.symbols != nil {
+			return cached.buf, cached.ast, cached.symbols, nil
+		}
+		tree = cached.ast
+		tokens = cached.tokens
+		syms = cached.symbols
+		spans = cached.semanticSpans
+		docSyms = cached.docSymbols
 	}
 
-	errListener := dmlex.NewErrorListener(canonical, 0)
-	tokens, tree := parseStreamAndTokens(canonical, content, errListener)
-	syms := ExtractFileSymbols(docURI, tree)
+	if tree == nil || tokens == nil {
+		errListener := dmlex.NewErrorListener(canonical, 0)
+		tokens, tree = parseStreamAndTokens(canonical, content, errListener)
+		syms = nil
+	}
+	if syms == nil {
+		syms = ExtractFileSymbols(docURI, tree)
+	}
 
 	c.mu.Lock()
 	if _, opened := c.overlay[canonical]; !opened {
 		c.diskParsed[canonical] = diskCacheEntry{
-			hash:    hash,
-			buf:     buf,
-			ast:     tree,
-			tokens:  tokens,
-			symbols: syms,
+			hash:          hash,
+			buf:           buf,
+			ast:           tree,
+			tokens:        tokens,
+			symbols:       syms,
+			semanticSpans: spans,
+			docSymbols:    docSyms,
 		}
 	}
 	c.mu.Unlock()
@@ -848,6 +873,7 @@ func (c *FsCache) getOrComputeSemanticSpans(
 	var tree antlr.ParseTree
 	var tokens *antlr.CommonTokenStream
 	var syms *FileSymbols
+	var docSyms []protocol.DocumentSymbol
 
 	c.mu.RLock()
 	cached, ok := c.diskParsed[canonical]
@@ -859,6 +885,7 @@ func (c *FsCache) getOrComputeSemanticSpans(
 		tree = cached.ast
 		tokens = cached.tokens
 		syms = cached.symbols
+		docSyms = cached.docSymbols
 	}
 
 	if tree == nil || tokens == nil {
@@ -880,9 +907,110 @@ func (c *FsCache) getOrComputeSemanticSpans(
 			tokens:        tokens,
 			symbols:       syms,
 			semanticSpans: spans,
+			docSymbols:    docSyms,
 		}
 	}
 	c.mu.Unlock()
 
 	return spans, nil
+}
+
+func (c *FsCache) getOrComputeDocumentSymbols(
+	pathOrURI string,
+) ([]protocol.DocumentSymbol, error) {
+	canonical, err := CanonicalPath(pathOrURI)
+	if err != nil {
+		return nil, err
+	}
+
+	c.mu.RLock()
+	entry, inOverlay := c.overlay[canonical]
+	if inOverlay {
+		if entry.docSymbols != nil {
+			symbols := entry.docSymbols
+			c.mu.RUnlock()
+			return symbols, nil
+		}
+		buf := entry.Buffer
+		content := entry.Content
+		tree := entry.AST
+		tokens := entry.Tokens
+		c.mu.RUnlock()
+
+		if buf == nil {
+			buf = stream.NewHashedBufferFromString(canonical, content)
+		}
+		targetHash := buf.Hash()
+
+		if tree == nil {
+			errListener := dmlex.NewErrorListener(canonical, 0)
+			tokens, tree = parseStreamAndTokens(canonical, content, errListener)
+		}
+		symbols := ExtractDocumentSymbols(tree)
+
+		c.mu.Lock()
+		if cur, ok := c.overlay[canonical]; ok {
+			if cur.Buffer == nil {
+				cur.Buffer = buf
+			}
+			if cur.Buffer.Hash() == targetHash {
+				cur.AST = tree
+				if tokens != nil {
+					cur.Tokens = tokens
+				}
+				cur.docSymbols = symbols
+			}
+		}
+		c.mu.Unlock()
+		return symbols, nil
+	}
+	c.mu.RUnlock()
+
+	data, err := c.baseFS.ReadFile(canonical)
+	if err != nil {
+		return nil, err
+	}
+	content := string(data)
+	buf := stream.NewHashedBufferFromString(canonical, content)
+	hash := buf.Hash()
+
+	var tree antlr.ParseTree
+	var tokens *antlr.CommonTokenStream
+	var syms *FileSymbols
+	var spans []semanticSpan
+
+	c.mu.RLock()
+	cached, ok := c.diskParsed[canonical]
+	c.mu.RUnlock()
+	if ok && cached.hash == hash {
+		if cached.docSymbols != nil {
+			return cached.docSymbols, nil
+		}
+		tree = cached.ast
+		tokens = cached.tokens
+		syms = cached.symbols
+		spans = cached.semanticSpans
+	}
+
+	if tree == nil {
+		errListener := dmlex.NewErrorListener(canonical, 0)
+		tokens, tree = parseStreamAndTokens(canonical, content, errListener)
+	}
+	symbols := ExtractDocumentSymbols(tree)
+
+	c.mu.Lock()
+	if _, opened := c.overlay[canonical]; !opened {
+		c.diskParsed[canonical] = diskCacheEntry{
+			hash:          hash,
+			buf:           buf,
+			ast:           tree,
+			tokens:        tokens,
+			symbols:       syms,
+			semanticSpans: spans,
+			docSymbols:    symbols,
+		}
+	}
+	c.mu.Unlock()
+
+	return symbols, nil
 }

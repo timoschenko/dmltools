@@ -22,6 +22,7 @@ over **JSON-RPC 2.0** via standard I/O (`stdin`/`stdout`).
   - `method` declarations and definitions, input parameters, and named return parameters
   - `local`, `session`, and `saved` variables, `param`, `constant`, `hook`, `loggroup`, `typedef`, and `extern` declarations
 - **Semantic Tokens Highlighting**: Computes semantic tokens for full files (`textDocument/semanticTokens/full`) and viewport ranges (`textDocument/semanticTokens/range`) using a hybrid lexer-baseline and local AST/symbol pass that handles DML keywords used as identifiers, templates, objects, types, modifiers, and graceful fallback on syntax errors or `dml 1.2;` files.
+- **Document Symbols (Outline & Breadcrumbs)**: Computes hierarchical document outlines (`textDocument/documentSymbol`) for DML files, organizing `device`, `template`, objects (`bank`, `register`, `field`, etc.), `in each` blocks, `method`s, `param`s, `session`/`saved` variables, `hook`s, `constant`s, `loggroup`s, `typedef`s (with nested composite struct/union/layout/bitfields members), and `extern`s.
 - **Live Editor Synchronization**: Tracks unsaved edits in memory (supporting incremental updates) while automatically falling back to on-disk files when resolving unopened imported files.
 
 ---

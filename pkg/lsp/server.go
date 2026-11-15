@@ -206,9 +206,10 @@ func (s *Server) Initialize(
 
 	return &protocol.InitializeResult{
 		Capabilities: protocol.ServerCapabilities{
-			PositionEncoding:   protocol.PositionEncodingKindUTF16,
-			TextDocumentSync:   syncOptions,
-			DefinitionProvider: protocol.Boolean(true),
+			PositionEncoding:       protocol.PositionEncodingKindUTF16,
+			TextDocumentSync:       syncOptions,
+			DefinitionProvider:     protocol.Boolean(true),
+			DocumentSymbolProvider: protocol.Boolean(true),
 			SemanticTokensProvider: &protocol.SemanticTokensOptions{
 				Legend: SemanticTokensLegend(),
 				Full:   protocol.Boolean(true),
@@ -469,6 +470,28 @@ func (s *Server) Definition(
 	}
 
 	return loc, nil
+}
+
+// DocumentSymbol handles the "textDocument/documentSymbol" request from the client.
+func (s *Server) DocumentSymbol(
+	ctx context.Context,
+	params *protocol.DocumentSymbolParams,
+) (protocol.DocumentSymbolResult, error) {
+	uriStr := string(params.TextDocument.URI)
+	s.logger.Debug("textDocument/documentSymbol",
+		slog.String("uri", uriStr),
+	)
+
+	res, err := ComputeDocumentSymbols(ctx, s.fsCache, uriStr)
+	if err != nil {
+		s.logger.Error("failed to compute document symbols",
+			slog.String("uri", uriStr),
+			slog.Any("error", err),
+		)
+		return nil, err
+	}
+
+	return res, nil
 }
 
 // SemanticTokensFull handles "textDocument/semanticTokens/full" requests.
