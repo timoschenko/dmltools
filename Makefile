@@ -66,6 +66,7 @@ BUILD_APPS:=
 BUILD_APPS+=dmlast
 BUILD_APPS+=dmlfmt
 BUILD_APPS+=dmlsp
+BUILD_APPS+=dmltag
 
 # Intermediate ANTLR generated files in grammar/dml
 G4_GENERATED_FILES:=

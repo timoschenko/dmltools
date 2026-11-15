@@ -66,6 +66,19 @@ builds:
       - -X main.GitCommit={{.Commit}}
       - -X main.BuildDate={{.Date}}
 
+  - id: dmltag-debug
+    dir: .
+    main: ./cmd/dmltag
+    binary: dmltag
+    targets:
+      - linux_amd64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -X main.Version={{.Version}}
+      - -X main.GitCommit={{.Commit}}
+      - -X main.BuildDate={{.Date}}
+
   - id: dml-web-format
     dir: .
     main: ./cmd/dml-web-format
@@ -102,6 +115,7 @@ archives:
       - dmlfmt-debug
       - dmlast-debug
       - dmlsp-debug
+      - dmltag-debug
     formats:
       - tar.gz
     name_template: "dmltools-debug_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
