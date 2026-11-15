@@ -4,11 +4,13 @@
 package lsp_test
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/timoschenko/dmltools/pkg/fs/stream"
 	"github.com/timoschenko/dmltools/pkg/lsp"
@@ -438,4 +440,68 @@ func TestFsCache_Concurrency(t *testing.T) {
 		}(int32(i))
 	}
 	wg.Wait()
+}
+
+func TestFsCache_DocumentSymbolsDiskCachingAndInvalidation(t *testing.T) {
+	cache := lsp.NewFsCache()
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "disk_doc_syms.dml")
+	v1Content := "dml 1.4;\nbank b { register r; }\n"
+	if err := os.WriteFile(filePath, []byte(v1Content), 0o600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// 1. Compute document symbols on disk file
+	syms1, err := lsp.ComputeDocumentSymbols(ctx, cache, filePath)
+	if err != nil {
+		t.Fatalf("ComputeDocumentSymbols failed: %v", err)
+	}
+	if len(syms1) != 1 || syms1[0].Name != "b" {
+		t.Fatalf("expected [b], got %+v", syms1)
+	}
+
+	// 2. Call GetOrParse on same disk file: should reuse cached AST
+	// and preserve docSymbols
+	buf, tree, fileSyms, err := cache.GetOrParse(filePath)
+	if err != nil {
+		t.Fatalf("GetOrParse failed: %v", err)
+	}
+	if buf == nil || tree == nil || fileSyms == nil {
+		t.Fatalf("unexpected nil from GetOrParse")
+	}
+
+	// Second ComputeDocumentSymbols call should hit cache
+	syms2, err := lsp.ComputeDocumentSymbols(ctx, cache, filePath)
+	if err != nil {
+		t.Fatalf("second ComputeDocumentSymbols failed: %v", err)
+	}
+	if len(syms2) != 1 || syms2[0].Name != "b" {
+		t.Fatalf("expected [b] after GetOrParse, got %+v", syms2)
+	}
+
+	// 3. Modify disk file to new content
+	v2Content := "dml 1.4;\nbank b2 { register r2; }\n"
+	if err := os.WriteFile(filePath, []byte(v2Content), 0o600); err != nil {
+		t.Fatalf("WriteFile v2 failed: %v", err)
+	}
+
+	// Compute semantic tokens on updated disk file (must not carry stale
+	// docSymbols into new hash entry)
+	tokens, err := lsp.ComputeSemanticTokens(ctx, cache, filePath)
+	if err != nil || tokens == nil {
+		t.Fatalf("ComputeSemanticTokens failed: %v", err)
+	}
+
+	// ComputeDocumentSymbols on updated disk file must reflect v2 content ("b2"),
+	// not stale "b"
+	syms3, err := lsp.ComputeDocumentSymbols(ctx, cache, filePath)
+	if err != nil {
+		t.Fatalf("ComputeDocumentSymbols v2 failed: %v", err)
+	}
+	if len(syms3) != 1 || syms3[0].Name != "b2" {
+		t.Fatalf("expected [b2], got %+v (stale cache detected)", syms3)
+	}
 }

@@ -208,7 +208,44 @@ Token modifiers emitted in bitmask form: `declaration`, `definition`, `readonly`
 
 ---
 
-## 4. Known Limitations
+## 4. Document Symbols (Outline & Breadcrumbs)
+
+`dmlsp` advertises `documentSymbolProvider: true` and serves `textDocument/documentSymbol` requests by emitting a hierarchical `DocumentSymbol` tree for editor Outline views, Quick Open / Go-to-Symbol (`@`), and Breadcrumbs.
+
+### Structure & Hierarchy
+
+- **Syntactic File Outline**:
+  - `device <name>;` appears as a top-level symbol at its declaration range.
+  - Top-level declarations (`template`, `bank`, `register`, `field`, `group`, `port`, `connect`, `implement`, `interface`, `attribute`, `event`, `subdevice`, `param`, `method`, `session`, `saved`, `hook`, `constant`, `loggroup`, `typedef`, `extern`) appear at the file root in source order.
+  - Container constructs (`template`, DML objects, and `in each` blocks) recursively contain their nested member declarations.
+  - `#if` / `#else` blocks (`toplevelIf` and `objectIf`) are flattened transparently, attaching declarations from both branches directly into the enclosing parent.
+  - Methods are leaf symbols: method parameters and method-local variables are omitted to keep outlines concise and navigation-focused.
+  - `typedef struct`, `typedef layout`, and `typedef bitfields` declarations recursively expose their member fields as children with field types.
+
+### Symbol Kind & Detail Mapping
+
+| DML Construct | LSP `SymbolKind` | Display `Detail` | Children |
+| :--- | :--- | :--- | :--- |
+| `device <name>;` | `Class` | `"device"` | None |
+| `template <name> { ... }` | `Interface` | `"template"` | Template body declarations |
+| `in each <templates> { ... }` | `Namespace` | `"in each"` | Block declarations |
+| `bank`, `register`, `field`, `group`, `port`, `connect`, `implement`, `interface`, `attribute`, `event`, `subdevice` | `Class` | Object keyword (`"bank"`, `"register"`, `"field"`, etc.) | Object body declarations |
+| `method <name>(...)` | `Method` | `"method"` | None (leaf symbol) |
+| `param <name> ...;` | `Property` | `"param"` | Struct members (if typed with composite struct) |
+| `session <cvar>;` | `Variable` / `Function` / `Struct` | `"session"` | Struct members (if struct-like) |
+| `saved <cvar>;` | `Variable` / `Function` / `Struct` | `"saved"` | Struct members (if struct-like) |
+| `hook(...) <name>;` | `Event` | `"hook"` | None |
+| `constant <name> = ...;` | `Constant` | `"constant"` | None |
+| `loggroup <name>;` | `EnumMember` | `"loggroup"` | None |
+| `typedef <cdecl>;` (scalar) | `TypeParameter` | `"typedef"` | None |
+| `typedef <cdecl>;` (composite) | `Struct` | `"typedef"` | Composite member fields |
+| `extern typedef <cdecl>;` | `TypeParameter` / `Struct` | `"extern typedef"` | Composite member fields (if any) |
+| `extern <cdecl>;` | `Function` / `Variable` / `Struct` | `"extern"` | Composite member fields (if any) |
+| Composite member field | `Field` / `Struct` | Field type string (e.g. `uint32`, `int*`, `struct`) | Nested composite members (if any) |
+
+---
+
+## 5. Known Limitations
 
 - **Single Target Location**: Go to Definition returns at most one target location. When a `param` or `default method` is declared in a template and overridden in an object, navigating to it resolves to the highest-precedence definition in scope order rather than offering a list of all overrides.
 - **Import Search Directories**: `dmlsp` searches only the importing file's directory and the primary workspace root (plus their `1.4/` subdirectories). Additional external include paths (such as custom `-I` directories outside the workspace) cannot currently be configured.

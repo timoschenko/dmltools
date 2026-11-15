@@ -31,6 +31,7 @@ their specific limitations, and unsupported LSP commands.
 | `textDocument/didClose` | Client -> Server | Notification | Supported (with limitations) | Clears diagnostics for the file and drops the in-memory buffer. |
 | `textDocument/publishDiagnostics` | Server -> Client | Notification | Supported (with limitations) | Pushes syntax errors and DML 1.2 `EUNIMPL` warnings. |
 | `textDocument/definition` | Client -> Server | Request | Supported (with limitations) | Resolves symbols, hierarchies, templates, and `import` paths. |
+| `textDocument/documentSymbol` | Client -> Server | Request | Supported (with limitations) | Computes hierarchical document symbol tree for outline and breadcrumbs. |
 | `textDocument/semanticTokens/full` | Client -> Server | Request | Supported (with limitations) | Computes semantic highlighting tokens for an entire document. |
 | `textDocument/semanticTokens/range` | Client -> Server | Request | Supported (with limitations) | Computes semantic highlighting tokens overlapping a requested range. |
 
@@ -45,6 +46,7 @@ their specific limitations, and unsupported LSP commands.
     - `positionEncoding`: `"utf-16"`
     - `textDocumentSync`: `{ openClose: true, change: 2 (Incremental), save: {} }`
     - `definitionProvider`: `true`
+    - `documentSymbolProvider`: `true`
     - `semanticTokensProvider`: `{ legend: { tokenTypes: [...], tokenModifiers: [...] }, full: true, range: true }`
   - **Limitations**:
     - **Single Workspace Root**: Only `workspaceFolders[0].uri` (or `rootUri` if `workspaceFolders` is empty) is used as the workspace root for `import` path lookup. Additional folders in multi-root workspaces are ignored.
@@ -109,6 +111,13 @@ their specific limitations, and unsupported LSP commands.
     - **Flat Method Scope**: Local variables inside nested `{ ... }` blocks within the same method share a flat method-level scope; shadowed names inside separate nested blocks resolve to the last declaration in that method.
     - **Files with Syntax Errors**: When a buffer contains syntax errors, resolution relies on a best-effort partial parse of the current buffer, so symbols located after a parse failure may not resolve.
 
+- **`textDocument/documentSymbol`** *(Request, Client -> Server)*
+  - **Behavior**: Returns a hierarchical `DocumentSymbol[]` outline representing `device`, `template`, objects (`bank`, `register`, `field`, `group`, `port`, `connect`, `implement`, `interface`, `attribute`, `event`, `subdevice`), `in each` blocks, `method`s, `param`s, `session`/`saved` variables, `hook`s, `constant`s, `loggroup`s, `typedef`s (with nested composite struct/union/layout/bitfields members), and `extern`s. `#if` and `#else` branches are flattened into the enclosing parent.
+  - **Limitations**:
+    - **Methods Are Leaves**: Method input/output parameters and method-local variables are omitted from the document symbol tree to keep the outline clean.
+    - **DML 1.2 Fallback**: Files with a `dml 1.2;` header return an empty symbol list (`[]`).
+    - **Files with Syntax Errors**: When a buffer contains syntax errors, symbol extraction performs a best-effort traversal of the partial AST, returning symbols up to the unparseable region.
+
 - **`textDocument/semanticTokens/full`** & **`textDocument/semanticTokens/range`** *(Requests, Client -> Server)*
   - **Behavior**: Returns UTF-16 delta-encoded `SemanticTokens` for the full document or overlapping `Range` using a hybrid lexer-baseline and local AST/symbol pass (`18` token types, `6` token modifiers). Multi-line comments are split per line with trailing horizontal whitespace stripped.
   - **Limitations**:
@@ -158,7 +167,6 @@ Any LSP 3.17 request or notification not listed in Section 2 is **unsupported** 
 
 | Method | Direction | Notes |
 | :--- | :--- | :--- |
-| `textDocument/documentSymbol` | Client -> Server | Unsupported (no editor Outline / Breadcrumbs tree). |
 | `workspace/symbol` | Client -> Server | Unsupported (no workspace-wide symbol search). |
 | `workspaceSymbol/resolve` | Client -> Server | Unsupported. |
 
